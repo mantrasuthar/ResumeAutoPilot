@@ -1,0 +1,8 @@
+Mantra Candidate
+mantra@example.com
+555-123-4567
+
+Product Designer and Frontend Engineer with 7 years of experience building data-heavy workflows.
+Skills: Figma, UX, user research, design systems, accessibility, React, TypeScript, JavaScript, HTML, CSS, analytics, GitHub, API.
+Preferred roles: Senior Product Designer, UX Designer, Frontend Engineer.
+Location: Remote United States, Seattle, Austin.

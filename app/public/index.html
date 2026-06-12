@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ApplyPilot Local</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="titlebar">
+      <div class="brand">
+        <div class="brand-mark">AP</div>
+        <div>
+          <strong>ApplyPilot Local</strong>
+          <span id="serverStatus">Connecting...</span>
+        </div>
+      </div>
+      <div class="window-actions" aria-hidden="true">
+        <span>-</span>
+        <span>□</span>
+        <span>x</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav class="rail" aria-label="Sections">
+        <button class="rail-button active" data-target="dashboard" title="Dashboard">D</button>
+        <button class="rail-button" data-target="resume" title="Resume">R</button>
+        <button class="rail-button" data-target="sources" title="Sources">S</button>
+        <button class="rail-button" data-target="queue" title="Queue">Q</button>
+        <button class="rail-button" data-target="answers" title="Answer bank">A</button>
+      </nav>
+
+      <aside class="side-panel">
+        <section class="resume-panel" id="resume">
+          <div class="section-head">
+            <div>
+              <h1>Resume</h1>
+              <p id="resumeSubtitle">Upload a resume to build a matching profile.</p>
+            </div>
+          </div>
+
+          <form id="resumeForm" class="upload-box">
+            <div class="document-icon" aria-hidden="true"></div>
+            <div class="upload-copy">
+              <strong id="resumeFileName">No resume loaded</strong>
+              <span id="resumeMeta">TXT parses best; PDF and Word get a rough local extraction.</span>
+            </div>
+            <input id="resumeInput" type="file" name="resume" accept=".txt,.pdf,.doc,.docx">
+            <button class="primary" type="submit">Upload resume</button>
+          </form>
+
+          <div class="field-stack">
+            <label>
+              Target roles
+              <textarea id="rolesInput" rows="3"></textarea>
+            </label>
+            <label>
+              Locations
+              <textarea id="locationsInput" rows="2"></textarea>
+            </label>
+            <div class="two-fields">
+              <label>
+                Minimum score
+                <input id="minimumScoreInput" type="number" min="0" max="100" step="1">
+              </label>
+              <label>
+                Queue limit
+                <input id="maxQueueInput" type="number" min="1" max="25" step="1">
+              </label>
+            </div>
+            <label class="switch-row">
+              <span>
+                Review before opening apply pages
+                <small>Recommended for privacy and accuracy.</small>
+              </span>
+              <input id="reviewToggle" type="checkbox">
+            </label>
+            <button class="secondary" id="savePreferences" type="button">Save preferences</button>
+          </div>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section class="commandbar">
+          <div>
+            <h2 id="viewTitle">Dashboard</h2>
+            <p id="viewSubtitle">Real scan and application preparation for your local profile.</p>
+          </div>
+          <div class="command-actions">
+            <button class="secondary" id="refreshState" type="button">Refresh</button>
+            <button class="secondary" id="scanSources" type="button">Scan sources</button>
+            <button class="primary" id="startApplying" type="button">Prepare applications</button>
+          </div>
+        </section>
+
+        <section class="workspace" id="dashboard">
+          <div class="stats-grid">
+            <div class="stat">
+              <span>Matched jobs</span>
+              <strong id="matchedStat">0</strong>
+            </div>
+            <div class="stat">
+              <span>Queued drafts</span>
+              <strong id="queuedStat">0</strong>
+            </div>
+            <div class="stat">
+              <span>Submitted</span>
+              <strong id="submittedStat">0</strong>
+            </div>
+            <div class="stat">
+              <span>Sources</span>
+              <strong id="sourcesStat">0</strong>
+            </div>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Apply to a specific role</h3>
+                <p>Target a role, company, or location and prepare only matching drafts.</p>
+              </div>
+            </div>
+            <form id="targetForm" class="target-form">
+              <label>
+                Role
+                <input id="targetRole" placeholder="Product Designer, Frontend Engineer, UX Writer">
+              </label>
+              <label>
+                Company
+                <input id="targetCompany" placeholder="Figma, Databricks, OpenAI">
+              </label>
+              <label>
+                Location
+                <input id="targetLocation" placeholder="Remote, Seattle, New York">
+              </label>
+              <div class="target-numbers">
+                <label>
+                  Min score
+                  <input id="targetMinScore" type="number" min="0" max="100" step="1">
+                </label>
+                <label>
+                  Drafts
+                  <input id="targetLimit" type="number" min="1" max="25" step="1" value="3">
+                </label>
+              </div>
+              <label class="check-row">
+                <input id="targetScanBefore" type="checkbox" checked>
+                <span>Scan sources first</span>
+              </label>
+              <button class="primary" id="targetApply" type="submit">Find and prepare</button>
+            </form>
+            <div id="targetResult" class="target-result">Example: role "Product Designer", company "Figma", location "Remote".</div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Latest matches</h3>
+                <p id="jobsCaption">Run a scan to fetch jobs from configured sources.</p>
+              </div>
+              <select id="jobFilter" aria-label="Filter jobs">
+                <option value="matched">Matched</option>
+                <option value="all">All scanned</option>
+                <option value="low-match">Low match</option>
+              </select>
+            </div>
+            <div id="jobsList" class="job-list empty-state">No scanned jobs yet.</div>
+          </section>
+        </section>
+
+        <section class="workspace hidden" id="sources">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Source connectors</h3>
+                <p>Use ATS slugs or a company careers URL.</p>
+              </div>
+            </div>
+            <form id="sourceForm" class="source-form">
+              <label>
+                Name
+                <input id="sourceName" required placeholder="Company or board name">
+              </label>
+              <label>
+                Type
+                <select id="sourceType">
+                  <option value="greenhouse">Greenhouse slug</option>
+                  <option value="lever">Lever slug</option>
+                  <option value="ashby">Ashby slug</option>
+                  <option value="generic">Careers page URL</option>
+                </select>
+              </label>
+              <label>
+                Slug or URL
+                <input id="sourceValue" required placeholder="openai, vercel, or https://company.com/careers">
+              </label>
+              <button class="primary" type="submit">Add source</button>
+            </form>
+            <div id="sourcesList" class="source-list"></div>
+          </section>
+        </section>
+
+        <section class="workspace hidden" id="queue">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Application queue</h3>
+                <p>Prepared drafts open the official application page only after approval.</p>
+              </div>
+            </div>
+            <div id="queueList" class="queue-list empty-state">No drafts queued yet.</div>
+          </section>
+        </section>
+
+        <section class="workspace hidden" id="answers">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Answer bank</h3>
+                <p>Reusable answers copied into each draft.</p>
+              </div>
+            </div>
+            <form id="answersForm" class="answers-form">
+              <label>
+                Work authorization
+                <input id="authorizationInput">
+              </label>
+              <label>
+                Sponsorship
+                <input id="sponsorshipInput">
+              </label>
+              <label>
+                Salary range
+                <input id="salaryInput">
+              </label>
+              <label>
+                Availability
+                <input id="availabilityInput">
+              </label>
+              <label>
+                Portfolio
+                <input id="portfolioInput">
+              </label>
+              <button class="primary" type="submit">Save answer bank</button>
+            </form>
+          </section>
+        </section>
+      </main>
+
+      <aside class="activity-panel">
+        <section class="panel">
+          <div class="panel-head compact">
+            <div>
+              <h3>Profile</h3>
+              <p id="profileCaption">No resume profile yet.</p>
+            </div>
+          </div>
+          <div id="profileFacts" class="facts"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head compact">
+            <div>
+              <h3>Activity</h3>
+              <p>Local audit trail</p>
+            </div>
+          </div>
+          <div id="activityList" class="activity-list"></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <dialog id="reviewDialog">
+    <form method="dialog" class="dialog-card">
+      <div class="dialog-head">
+        <div>
+          <h3 id="dialogTitle">Review application</h3>
+          <p id="dialogMeta"></p>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Close">x</button>
+      </div>
+      <label>
+        Cover note
+        <textarea id="dialogCoverNote" rows="7"></textarea>
+      </label>
+      <div id="dialogAnswers" class="dialog-answers"></div>
+      <div class="dialog-actions">
+        <button class="secondary" value="cancel">Cancel</button>
+        <button class="primary" id="approveAndOpen" value="default">Approve and open official page</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

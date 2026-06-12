@@ -1,0 +1,13 @@
+{
+  "name": "applypilot-local",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Windows-friendly job application assistant with resume parsing, job scanning, matching, and review queue.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
