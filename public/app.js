@@ -183,6 +183,7 @@ function renderJobs() {
           ${tags(job.matchedSkills, "success")}
           ${tags(job.matchedKeywords.slice(0, 4), "")}
         </div>
+        ${renderMatchCriteria(job)}
       </div>
       <div class="job-actions">
         <div class="score-ring" style="--score:${job.score}%">${job.score}</div>
@@ -198,6 +199,52 @@ function renderJobs() {
     </article>
   `).join("");
   if (window.lucide) lucide.createIcons();
+}
+
+function renderMatchCriteria(job) {
+  const criteria = [
+    {
+      label: "Resume skills",
+      items: job.matchedSkills || [],
+      empty: state.data.resume ? "No direct skill match found" : "Upload resume first"
+    },
+    {
+      label: "Resume keywords",
+      items: (job.matchedKeywords || []).slice(0, 6),
+      empty: state.data.resume ? "No keyword overlap found" : "Upload resume first"
+    },
+    {
+      label: "Target role",
+      items: job.roleMatches || [],
+      empty: "Outside selected role targets"
+    },
+    {
+      label: "Target location",
+      items: job.locationMatches || [],
+      empty: "Outside selected locations"
+    }
+  ];
+
+  return `
+    <div class="match-criteria" aria-label="Resume match criteria">
+      <div class="match-criteria-head">
+        <span>Resume match</span>
+        <strong>${Number(job.score || 0)}%</strong>
+      </div>
+      <div class="match-criteria-grid">
+        ${criteria.map(group => `
+          <div class="criteria-group ${group.items.length ? "has-match" : "no-match"}">
+            <span>${escapeHtml(group.label)}</span>
+            <div>
+              ${group.items.length
+                ? group.items.map(item => `<em>${escapeHtml(item)}</em>`).join("")
+                : `<small>${escapeHtml(group.empty)}</small>`}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
 }
 
 function renderSources() {
