@@ -648,7 +648,11 @@ async function markSubmitted(queueId) {
 
 function setView(view) {
   state.view = view;
-  document.querySelectorAll(".workspace").forEach(panel => panel.classList.toggle("hidden", panel.id !== view));
+  const layout = document.querySelector(".layout");
+  const isMobileResume = view === "resume" && window.matchMedia("(max-width: 900px)").matches;
+  const workspaceView = view === "resume" ? "dashboard" : view;
+  layout?.classList.toggle("show-mobile-resume", isMobileResume);
+  document.querySelectorAll(".workspace").forEach(panel => panel.classList.toggle("hidden", panel.id !== workspaceView));
   document.querySelectorAll(".rail-button").forEach(button => button.classList.toggle("active", button.dataset.target === view));
   const titles = {
     dashboard: ["Dashboard", "Real scan and application preparation for your local profile."],
@@ -703,9 +707,11 @@ function bindEvents() {
   document.querySelectorAll(".rail-button").forEach(button => {
     button.addEventListener("click", () => {
       const target = button.dataset.target;
-      setView(target === "resume" ? "dashboard" : target);
+      setView(target);
     });
   });
+
+  window.addEventListener("resize", () => setView(state.view));
 
   els.jobsList.addEventListener("click", event => {
     const queueButton = event.target.closest(".queue-job");
