@@ -874,6 +874,68 @@ function regionText(job) {
   return `${job.title || ""} ${job.company || ""} ${job.location || ""} ${job.department || ""} ${job.description || ""}`.toLowerCase();
 }
 
+const REMOTE_LOCATION_PATTERNS = [
+  /\bremote\b/,
+  /\bworldwide\b/,
+  /\bglobal\b/,
+  /\banywhere\b/
+];
+
+const CANADA_LOCATION_TERMS = [
+  "canada", "canadian", "remote canada", "saskatchewan", "saskatoon", "regina",
+  "ontario", "toronto", "ottawa", "waterloo", "kitchener", "mississauga",
+  "vancouver", "montreal", "quebec", "calgary", "edmonton", "winnipeg"
+];
+
+const INDIA_LOCATION_TERMS = [
+  "india", "ind", "remote india", "bangalore", "bengaluru", "hyderabad",
+  "mumbai", "pune", "delhi", "new delhi", "gurugram", "gurgaon", "noida",
+  "chennai", "kolkata", "ahmedabad"
+];
+
+function locationIntent(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  const terms = importantTerms(raw);
+  const text = ` ${raw} `;
+  const wantsRemote = REMOTE_LOCATION_PATTERNS.some(pattern => pattern.test(text));
+  const wantsCanada = hasTermOverlap(text, CANADA_LOCATION_TERMS) || terms.includes("ca");
+  const wantsIndia = hasTermOverlap(text, INDIA_LOCATION_TERMS);
+  return {
+    raw,
+    terms,
+    hasExplicitLocation: Boolean(raw),
+    wantsRemote,
+    wantsCanada,
+    wantsIndia
+  };
+}
+
+function hasTermOverlap(text, terms) {
+  return terms.some(term => text.includes(term));
+}
+
+function hasRemoteSignal(job) {
+  const text = regionText(job);
+  return REMOTE_LOCATION_PATTERNS.some(pattern => pattern.test(text));
+}
+
+function jobMatchesLocationIntent(job, intent) {
+  if (!intent?.hasExplicitLocation) return isCanadaRelevantJob(job);
+  if (intent.wantsCanada) return isCanadaRelevantJob(job) || (intent.wantsRemote && hasRemoteSignal(job));
+
+  const text = regionText(job);
+  if (intent.wantsIndia && hasTermOverlap(text, INDIA_LOCATION_TERMS)) return true;
+  if (intent.terms.some(term => term.length > 1 && text.includes(term))) return true;
+  if (intent.wantsRemote && hasRemoteSignal(job)) return true;
+  if (!String(job.location || "").trim() && job.includeIfUnlocated) {
+    const sourceText = `${job.sourceCountry || ""} ${job.sourceProvince || ""} ${job.sourceName || ""}`.toLowerCase();
+    if (!sourceText.trim()) return true;
+    if (intent.wantsIndia && hasTermOverlap(sourceText, INDIA_LOCATION_TERMS)) return true;
+    if (intent.terms.some(term => term.length > 1 && sourceText.includes(term))) return true;
+  }
+  return false;
+}
+
 function isCanadaRelevantJob(job) {
   if (String(job.location || "").trim()) {
     const locationOnly = { location: job.location };
@@ -897,13 +959,14 @@ function recencyScore(value) {
   return 2;
 }
 
-function upsertJobs(state, scannedJobs) {
+function upsertJobs(state, scannedJobs, options = {}) {
   const existing = new Map(state.jobs.map(job => [job.id, job]));
   const nextJobs = [...state.jobs];
   let added = 0;
   let updated = 0;
+  const intent = locationIntent(options.targetLocation || "");
 
-  for (const scanned of scannedJobs.filter(isCanadaRelevantJob)) {
+  for (const scanned of scannedJobs.filter(job => jobMatchesLocationIntent(job, intent))) {
     const stableId = `job_${hash(`${scanned.sourceId}:${scanned.externalId}:${scanned.url}:${scanned.title}`)}`;
     const match = scoreJob(scanned, state.resume, state.preferences);
     const normalized = {
@@ -939,26 +1002,75 @@ function upsertJobs(state, scannedJobs) {
   return { added, updated };
 }
 
-async function performScan(state) {
+function buildTargetedSources(target) {
+  const role = String(target.role || "").trim();
+  const company = String(target.company || "").trim();
+  const location = String(target.location || "").trim();
+  const query = [role, company].filter(Boolean).join(" ").trim() || role || company || "jobs";
+  if (!query && !location) return [];
+
+  const locationLabel = location || "Worldwide";
+  const suffix = hash(`${query}:${locationLabel}`).slice(0, 8);
+  const sources = [
+    {
+      id: `target_linkedin_${suffix}`,
+      name: `LinkedIn targeted: ${query || "jobs"} in ${locationLabel}`,
+      type: "linkedin",
+      value: query || "jobs",
+      country: locationLabel,
+      province: "",
+      includeIfUnlocated: true,
+      enabled: true,
+      transient: true
+    }
+  ];
+
+  if (/remote|worldwide|global|anywhere/i.test(locationLabel) || !location) {
+    sources.push({
+      id: `target_remotive_${suffix}`,
+      name: `Remote targeted: ${query || "jobs"}`,
+      type: "remotive",
+      value: query || "jobs",
+      country: locationLabel,
+      province: "",
+      includeIfUnlocated: true,
+      enabled: true,
+      transient: true
+    });
+  }
+
+  return sources;
+}
+
+async function performScan(state, options = {}) {
   const scannedJobs = [];
   const results = [];
+  const sources = [
+    ...state.sources,
+    ...(options.extraSources || [])
+  ];
 
-  for (const source of state.sources) {
+  for (const source of sources) {
     if (!source.enabled) continue;
     try {
       const jobs = await scanSource(source);
       scannedJobs.push(...jobs);
-      source.lastStatus = `Found ${jobs.length} job${jobs.length === 1 ? "" : "s"}`;
-      source.lastScannedAt = new Date().toISOString();
+      if (!source.transient) {
+        source.lastStatus = `Found ${jobs.length} job${jobs.length === 1 ? "" : "s"}`;
+        source.lastScannedAt = new Date().toISOString();
+      }
       results.push({ sourceId: source.id, ok: true, count: jobs.length });
     } catch (error) {
-      source.lastStatus = error.message || "Scan failed";
-      source.lastScannedAt = new Date().toISOString();
-      results.push({ sourceId: source.id, ok: false, error: source.lastStatus });
+      const status = error.message || "Scan failed";
+      if (!source.transient) {
+        source.lastStatus = status;
+        source.lastScannedAt = new Date().toISOString();
+      }
+      results.push({ sourceId: source.id, ok: false, error: status });
     }
   }
 
-  const upsert = upsertJobs(state, scannedJobs);
+  const upsert = upsertJobs(state, scannedJobs, { targetLocation: options.targetLocation });
   return { results, ...upsert };
 }
 
@@ -1045,10 +1157,10 @@ function targetCandidates(state, target) {
   const minScore = clamp(Number(target.minScore ?? state.preferences.minimumScore), 0, 100);
 
   return state.jobs
-    .filter(job => job.score >= minScore)
     .filter(job => !state.queue.some(item => item.jobId === job.id && item.status !== "skipped"))
     .map(job => ({ job, targetScore: scoreTargetFit(job, roleTerms, companyTerms, locationTerms) }))
     .filter(result => result.targetScore > 0)
+    .filter(result => result.job.score >= minScore || result.targetScore >= 14)
     .sort((a, b) => b.targetScore - a.targetScore || b.job.score - a.job.score || dateValue(b.job.postedAt) - dateValue(a.job.postedAt))
     .map(result => result.job);
 }
@@ -1420,28 +1532,35 @@ function scoreTargetFit(job, roleTerms, companyTerms, locationTerms) {
   let score = 1;
 
   if (roleTerms.length) {
-    const titleMatches = roleTerms.filter(term => title.includes(term)).length;
-    const textMatches = roleTerms.filter(term => allText.includes(term)).length;
-    if (!titleMatches && textMatches < Math.ceil(roleTerms.length * 0.7)) return 0;
-    score += titleMatches * 12 + textMatches * 3;
+    const titleMatches = roleTerms.filter(term => termMatches(title, term)).length;
+    const textMatches = roleTerms.filter(term => termMatches(allText, term)).length;
+    const requiredMatches = Math.max(1, Math.ceil(roleTerms.length * 0.5));
+    if (!titleMatches && textMatches < requiredMatches) return 0;
+    score += titleMatches * 14 + textMatches * 3;
   }
 
   if (companyTerms.length) {
-    const companyMatches = companyTerms.filter(term => company.includes(term)).length;
+    const companyMatches = companyTerms.filter(term => termMatches(company, term)).length;
     if (!companyMatches) return 0;
     score += companyMatches * 14;
   }
 
   if (locationTerms.length) {
-    const locationMatches = locationTerms.filter(term => {
-      if (term === "remote") return location.includes("remote") || allText.includes("remote");
-      return location.includes(term) || allText.includes(term);
-    }).length;
-    if (!locationMatches) return 0;
-    score += locationMatches * 8;
+    const intent = locationIntent(locationTerms.join(" "));
+    if (!jobMatchesLocationIntent(job, intent)) return 0;
+    const locationMatches = locationTerms.filter(term => termMatches(location, term) || termMatches(allText, term)).length;
+    score += Math.max(1, locationMatches) * 8;
   }
 
   return score;
+}
+
+function termMatches(text, term) {
+  if (!term) return false;
+  if (text.includes(term)) return true;
+  const compactText = text.replace(/[^a-z0-9+#]+/g, "");
+  const compactTerm = term.replace(/[^a-z0-9+#]+/g, "");
+  return compactTerm.length > 2 && compactText.includes(compactTerm);
 }
 
 function importantTerms(value) {
@@ -1660,7 +1779,10 @@ async function handleApi(req, res, pathname) {
 
       let scan = null;
       if (target.scanBefore) {
-        scan = await performScan(state);
+        scan = await performScan(state, {
+          targetLocation: target.location,
+          extraSources: buildTargetedSources(target)
+        });
       }
 
       const runId = id("target_run");
