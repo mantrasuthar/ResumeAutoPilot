@@ -1005,6 +1005,7 @@ dialog::backdrop { background: var(--surface-hover); }
 
   .main,
   .side-panel {
+    grid-column: 1;
     grid-row: 1;
     min-height: 0;
     overflow-y: auto;
@@ -1020,6 +1021,7 @@ dialog::backdrop { background: var(--surface-hover); }
 
   .layout.show-mobile-resume .side-panel {
     display: block;
+    grid-column: 1;
   }
 
   .layout.show-mobile-resume .main {
