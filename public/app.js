@@ -158,11 +158,25 @@ function renderStats() {
 
 function renderJobs() {
   const filter = els.jobFilter.value;
+  const total = state.data.jobs.length;
+  const matchedCount = state.data.jobs.filter(job => job.status === "matched").length;
+  const lowMatchCount = state.data.jobs.filter(job => job.status === "low-match").length;
+  const minScore = state.data.preferences?.minimumScore ?? 0;
+  els.jobFilter.querySelector('option[value="all"]').textContent = `All scanned (${total})`;
+  els.jobFilter.querySelector('option[value="matched"]').textContent = `Matched (${matchedCount})`;
+  els.jobFilter.querySelector('option[value="low-match"]').textContent = `Low match (${lowMatchCount})`;
   const jobs = state.data.jobs.filter(job => filter === "all" || job.status === filter);
-  els.jobsCaption.textContent = `${jobs.length} shown, ${state.data.jobs.length} scanned total.`;
+  const hidden = total - jobs.length;
+  els.jobsCaption.textContent = filter === "matched"
+    ? `${matchedCount} matched above your ${minScore}% minimum score. ${lowMatchCount} lower-scoring jobs are hidden.`
+    : filter === "low-match"
+      ? `${lowMatchCount} below your ${minScore}% minimum score. These may still be worth reviewing.`
+      : `${jobs.length} shown: ${matchedCount} matched, ${lowMatchCount} low match, ${total} scanned total.${hidden ? ` ${hidden} hidden by this filter.` : ""}`;
   if (!jobs.length) {
     els.jobsList.className = "job-list empty-state";
-    els.jobsList.textContent = state.data.jobs.length ? "No jobs match this filter." : "No scanned jobs yet.";
+    els.jobsList.textContent = state.data.jobs.length
+      ? `No jobs match this filter. Try All scanned, lower the minimum score, or rescan after updating your resume.`
+      : "No scanned jobs yet.";
     return;
   }
   els.jobsList.className = "job-list";
