@@ -4,32 +4,69 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ApplyPilot Local</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="app-shell">
+  <canvas id="particle-canvas"></canvas>
+
+  <div id="auth-screen" style="display: none; position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(20px);">
+    <div class="auth-card" style="background: var(--surface-solid); padding: 40px; border-radius: 20px; box-shadow: var(--shadow-lg); width: 400px; border: 1px solid var(--line-strong); display: flex; flex-direction: column; gap: 24px;">
+      <div style="text-align: center;">
+        <div class="brand-mark" style="margin: 0 auto 16px; width: 48px; height: 48px;"><i data-lucide="zap" size="24"></i></div>
+        <h2 style="font-size: 24px; color: var(--text);">Welcome to ApplyPilot</h2>
+        <p style="color: var(--text-secondary); margin-top: 8px;">Sign in to your isolated workspace</p>
+      </div>
+      <form id="authForm" style="display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-size: 13px; font-weight: 600;">Email address</label>
+          <input type="email" id="authEmail" required style="padding: 12px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-hover); color: var(--text); outline: none;">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-size: 13px; font-weight: 600;">Password</label>
+          <input type="password" id="authPassword" required style="padding: 12px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-hover); color: var(--text); outline: none;">
+        </div>
+        <p id="authError" style="color: var(--danger); font-size: 13px; margin: 0; display: none;"></p>
+        <button type="submit" id="authBtn" style="background: var(--accent); color: #fff; padding: 14px; border-radius: 10px; border: none; font-weight: 600; cursor: pointer; margin-top: 8px; transition: var(--t-fast);">Sign In</button>
+      </form>
+      <div style="text-align: center; font-size: 13px; color: var(--text-secondary);">
+        <a href="#" id="authToggleMode" style="color: var(--accent); text-decoration: none; font-weight: 600;">Create an account</a> instead
+      </div>
+    </div>
+  </div>
+
+  <div class="app-shell" style="display: none;">
     <header class="titlebar">
       <div class="brand">
-        <div class="brand-mark">AP</div>
+        <div class="brand-mark">
+          <i data-lucide="zap" size="14"></i>
+        </div>
         <div>
           <strong>ApplyPilot Local</strong>
           <span id="serverStatus">Connecting...</span>
         </div>
       </div>
-      <div class="window-actions" aria-hidden="true">
-        <span>-</span>
-        <span>□</span>
-        <span>x</span>
-      </div>
     </header>
 
     <div class="layout">
       <nav class="rail" aria-label="Sections">
-        <button class="rail-button active" data-target="dashboard" title="Dashboard">D</button>
-        <button class="rail-button" data-target="resume" title="Resume">R</button>
-        <button class="rail-button" data-target="sources" title="Sources">S</button>
-        <button class="rail-button" data-target="queue" title="Queue">Q</button>
-        <button class="rail-button" data-target="answers" title="Answer bank">A</button>
+        <button class="rail-button active" data-target="dashboard" title="Dashboard">
+          <i data-lucide="layout-dashboard"></i>
+        </button>
+        <button class="rail-button" data-target="resume" title="Resume">
+          <i data-lucide="file-text"></i>
+        </button>
+        <button class="rail-button" data-target="sources" title="Sources">
+          <i data-lucide="link"></i>
+        </button>
+        <button class="rail-button" data-target="queue" title="Queue">
+          <i data-lucide="list-ordered"></i>
+        </button>
+        <button class="rail-button" data-target="answers" title="Answer bank">
+          <i data-lucide="library"></i>
+        </button>
       </nav>
 
       <aside class="side-panel">
@@ -42,13 +79,28 @@
           </div>
 
           <form id="resumeForm" class="upload-box">
-            <div class="document-icon" aria-hidden="true"></div>
+            <div class="document-icon" aria-hidden="true">
+              <i data-lucide="file-up" size="32"></i>
+            </div>
             <div class="upload-copy">
               <strong id="resumeFileName">No resume loaded</strong>
               <span id="resumeMeta">TXT parses best; PDF and Word get a rough local extraction.</span>
             </div>
-            <input id="resumeInput" type="file" name="resume" accept=".txt,.pdf,.doc,.docx">
-            <button class="primary" type="submit">Upload resume</button>
+            <label for="resumeInput" class="select-file-trigger">
+              <i data-lucide="file-plus" size="14"></i>
+              <span>Choose file</span>
+            </label>
+            <input id="resumeInput" type="file" name="resume" accept=".txt,.pdf,.doc,.docx" class="hidden-file-input">
+            <div style="display: flex; gap: 8px; justify-content: center; width: 100%; margin-top: 8px;">
+              <button class="primary" type="submit" id="uploadResumeBtn">
+                <i data-lucide="upload-cloud" size="16"></i>
+                Upload
+              </button>
+              <button class="danger" type="button" id="removeResumeBtn" style="display: none;">
+                <i data-lucide="trash-2" size="16"></i>
+                Remove
+              </button>
+            </div>
           </form>
 
           <div class="field-stack">
@@ -77,7 +129,14 @@
               </span>
               <input id="reviewToggle" type="checkbox">
             </label>
-            <button class="secondary" id="savePreferences" type="button">Save preferences</button>
+            <button class="secondary" id="savePreferences" type="button">
+              <i data-lucide="save" size="16"></i>
+              Save preferences
+            </button>
+            <button class="secondary" id="logoutBtn" type="button" style="color: var(--danger);">
+              <i data-lucide="log-out" size="16"></i>
+              Logout
+            </button>
           </div>
         </section>
       </aside>
@@ -89,27 +148,40 @@
             <p id="viewSubtitle">Real scan and application preparation for your local profile.</p>
           </div>
           <div class="command-actions">
-            <button class="secondary" id="refreshState" type="button">Refresh</button>
-            <button class="secondary" id="scanSources" type="button">Scan sources</button>
-            <button class="primary" id="startApplying" type="button">Prepare applications</button>
+            <button class="secondary" id="refreshState" type="button">
+              <i data-lucide="rotate-cw" size="16"></i>
+              Refresh
+            </button>
+            <button class="secondary" id="scanSources" type="button">
+              <i data-lucide="search" size="16"></i>
+              Scan sources
+            </button>
+            <button class="primary" id="startApplying" type="button">
+              <i data-lucide="play" size="16"></i>
+              Prepare applications
+            </button>
           </div>
         </section>
 
         <section class="workspace" id="dashboard">
           <div class="stats-grid">
             <div class="stat">
+              <div class="stat-icon"><i data-lucide="briefcase" size="16"></i></div>
               <span>Matched jobs</span>
               <strong id="matchedStat">0</strong>
             </div>
             <div class="stat">
+              <div class="stat-icon"><i data-lucide="clipboard-list" size="16"></i></div>
               <span>Queued drafts</span>
               <strong id="queuedStat">0</strong>
             </div>
             <div class="stat">
+              <div class="stat-icon"><i data-lucide="check-circle" size="16"></i></div>
               <span>Submitted</span>
               <strong id="submittedStat">0</strong>
             </div>
             <div class="stat">
+              <div class="stat-icon"><i data-lucide="database" size="16"></i></div>
               <span>Sources</span>
               <strong id="sourcesStat">0</strong>
             </div>
@@ -129,11 +201,11 @@
               </label>
               <label>
                 Company
-                <input id="targetCompany" placeholder="Figma, Databricks, OpenAI">
+                <input id="targetCompany" placeholder="Shopify, Wealthsimple, 7shifts">
               </label>
               <label>
                 Location
-                <input id="targetLocation" placeholder="Remote, Seattle, New York">
+                <input id="targetLocation" placeholder="Remote Canada, Toronto, Saskatoon">
               </label>
               <div class="target-numbers">
                 <label>
@@ -149,9 +221,12 @@
                 <input id="targetScanBefore" type="checkbox" checked>
                 <span>Scan sources first</span>
               </label>
-              <button class="primary" id="targetApply" type="submit">Find and prepare</button>
+              <button class="primary" id="targetApply" type="submit">
+                <i data-lucide="target" size="16"></i>
+                Find and prepare
+              </button>
             </form>
-            <div id="targetResult" class="target-result">Example: role "Product Designer", company "Figma", location "Remote".</div>
+            <div id="targetResult" class="target-result">Example: role "Software Developer", company "Shopify", location "Remote Canada".</div>
           </section>
 
           <section class="panel">
@@ -181,11 +256,13 @@
             <form id="sourceForm" class="source-form">
               <label>
                 Name
-                <input id="sourceName" required placeholder="Company or board name">
+                <input id="sourceName" placeholder="Company or board name (optional)">
               </label>
               <label>
                 Type
                 <select id="sourceType">
+                  <option value="linkedin">LinkedIn Search (Auto)</option>
+                  <option value="remotive">Remotive (Remote Auto)</option>
                   <option value="greenhouse">Greenhouse slug</option>
                   <option value="lever">Lever slug</option>
                   <option value="ashby">Ashby slug</option>
@@ -196,7 +273,10 @@
                 Slug or URL
                 <input id="sourceValue" required placeholder="openai, vercel, or https://company.com/careers">
               </label>
-              <button class="primary" type="submit">Add source</button>
+              <button class="primary" type="submit">
+                <i data-lucide="plus" size="16"></i>
+                Add source
+              </button>
             </form>
             <div id="sourcesList" class="source-list"></div>
           </section>
@@ -224,6 +304,14 @@
             </div>
             <form id="answersForm" class="answers-form">
               <label>
+                Email
+                <input id="emailInput" type="email">
+              </label>
+              <label>
+                Phone
+                <input id="phoneInput" type="tel">
+              </label>
+              <label>
                 Work authorization
                 <input id="authorizationInput">
               </label>
@@ -243,7 +331,10 @@
                 Portfolio
                 <input id="portfolioInput">
               </label>
-              <button class="primary" type="submit">Save answer bank</button>
+              <button class="primary" type="submit">
+                <i data-lucide="save" size="16"></i>
+                Save answer bank
+              </button>
             </form>
           </section>
         </section>
@@ -280,7 +371,9 @@
           <h3 id="dialogTitle">Review application</h3>
           <p id="dialogMeta"></p>
         </div>
-        <button class="icon-button" value="cancel" aria-label="Close">x</button>
+        <button class="icon-button" value="cancel" aria-label="Close">
+          <i data-lucide="x" size="18"></i>
+        </button>
       </div>
       <label>
         Cover note
@@ -289,13 +382,17 @@
       <div id="dialogAnswers" class="dialog-answers"></div>
       <div class="dialog-actions">
         <button class="secondary" value="cancel">Cancel</button>
-        <button class="primary" id="approveAndOpen" value="default">Approve and open official page</button>
+        <button class="primary" id="approveAndOpen" value="default">
+          <i data-lucide="external-link" size="16"></i>
+          Approve and open official page
+        </button>
       </div>
     </form>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+  <script src="https://unpkg.com/lucide@latest"></script>
   <script src="/app.js"></script>
 </body>
 </html>

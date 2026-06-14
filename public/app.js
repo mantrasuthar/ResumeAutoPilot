@@ -8,6 +8,8 @@ const els = {
   serverStatus: document.querySelector("#serverStatus"),
   resumeForm: document.querySelector("#resumeForm"),
   resumeInput: document.querySelector("#resumeInput"),
+  removeResumeBtn: document.querySelector("#removeResumeBtn"),
+  uploadResumeBtn: document.querySelector("#uploadResumeBtn"),
   resumeFileName: document.querySelector("#resumeFileName"),
   resumeMeta: document.querySelector("#resumeMeta"),
   resumeSubtitle: document.querySelector("#resumeSubtitle"),
@@ -46,6 +48,8 @@ const els = {
   profileFacts: document.querySelector("#profileFacts"),
   activityList: document.querySelector("#activityList"),
   answersForm: document.querySelector("#answersForm"),
+  emailInput: document.querySelector("#emailInput"),
+  phoneInput: document.querySelector("#phoneInput"),
   authorizationInput: document.querySelector("#authorizationInput"),
   sponsorshipInput: document.querySelector("#sponsorshipInput"),
   salaryInput: document.querySelector("#salaryInput"),
@@ -72,10 +76,22 @@ async function api(path, options = {}) {
   return data;
 }
 
+async function initAuth() {
+  try {
+    await api("/api/auth/me");
+    document.querySelector("#auth-screen").style.display = "none";
+    document.querySelector(".app-shell").style.display = "grid";
+    await loadState();
+  } catch (err) {
+    document.querySelector("#auth-screen").style.display = "flex";
+    document.querySelector(".app-shell").style.display = "none";
+  }
+}
+
 async function loadState() {
   try {
     state.data = await api("/api/state");
-    els.serverStatus.textContent = "Running locally";
+    els.serverStatus.textContent = state.data.capabilities?.hostedMode ? "Hosted website" : "Running locally";
     render();
   } catch (error) {
     els.serverStatus.textContent = "Server unavailable";
@@ -95,6 +111,7 @@ function render() {
   renderProfile();
   renderActivity();
   renderAnswers();
+  if (window.lucide) lucide.createIcons();
 }
 
 function renderTargetDefaults() {
@@ -120,11 +137,15 @@ function renderResume() {
     els.resumeFileName.textContent = "No resume loaded";
     els.resumeSubtitle.textContent = "Upload a resume to build a matching profile.";
     els.resumeMeta.textContent = "TXT parses best; PDF and Word get a rough local extraction.";
+    els.removeResumeBtn.style.display = "none";
+    els.uploadResumeBtn.innerHTML = '<i data-lucide="upload-cloud" size="16"></i> Upload';
     return;
   }
   els.resumeFileName.textContent = resume.filename;
   els.resumeSubtitle.textContent = `${resume.skills.length} skills, ${resume.roles.length} role hints, ${resume.wordCount} words.`;
   els.resumeMeta.textContent = `${resume.parseQuality} parse, uploaded ${formatDate(resume.uploadedAt)}.`;
+  els.removeResumeBtn.style.display = "inline-flex";
+  els.uploadResumeBtn.innerHTML = '<i data-lucide="refresh-cw" size="16"></i> Replace';
 }
 
 function renderStats() {
@@ -165,11 +186,18 @@ function renderJobs() {
       </div>
       <div class="job-actions">
         <div class="score-ring" style="--score:${job.score}%">${job.score}</div>
-        <button class="secondary queue-job" data-job-id="${job.id}">Queue</button>
-        <a class="secondary link-button" href="${escapeAttr(job.url || job.applyUrl || "#")}" target="_blank" rel="noreferrer">Open</a>
+        <button class="secondary queue-job" data-job-id="${job.id}">
+          <i data-lucide="plus" size="14"></i>
+          Queue
+        </button>
+        <a class="secondary link-button" href="${escapeAttr(job.url || job.applyUrl || "#")}" target="_blank" rel="noreferrer">
+          <i data-lucide="external-link" size="14"></i>
+          Open
+        </a>
       </div>
     </article>
   `).join("");
+  if (window.lucide) lucide.createIcons();
 }
 
 function renderSources() {
@@ -182,14 +210,22 @@ function renderSources() {
       <div>
         <strong>${escapeHtml(source.name)}</strong>
         <code>${escapeHtml(source.type)}: ${escapeHtml(source.value)}</code>
+        ${source.country || source.province ? `<div class="source-status">${escapeHtml([source.country, source.province].filter(Boolean).join(" - "))}</div>` : ""}
         <div class="source-status">${escapeHtml(source.lastStatus || "Not scanned yet")} ${source.lastScannedAt ? `- ${escapeHtml(formatDate(source.lastScannedAt))}` : ""}</div>
       </div>
       <div class="job-actions">
-        <button class="secondary toggle-source" data-source-id="${source.id}">${source.enabled ? "Disable" : "Enable"}</button>
-        <button class="danger delete-source" data-source-id="${source.id}">Remove</button>
+        <button class="secondary toggle-source" data-source-id="${source.id}">
+          <i data-lucide="${source.enabled ? 'pause' : 'play'}" size="14"></i>
+          ${source.enabled ? "Disable" : "Enable"}
+        </button>
+        <button class="danger delete-source" data-source-id="${source.id}">
+          <i data-lucide="trash-2" size="14"></i>
+          Remove
+        </button>
       </div>
     </article>
   `).join("");
+  if (window.lucide) lucide.createIcons();
 }
 
 function renderQueue() {
@@ -199,7 +235,13 @@ function renderQueue() {
     return;
   }
   els.queueList.className = "queue-list";
-  els.queueList.innerHTML = state.data.queue.map(item => `
+  const canAutofill = Boolean(state.data.capabilities?.browserAutofill);
+  els.queueList.innerHTML = state.data.queue.map(item => {
+    const autofillDisabled = item.status === "submitted" || !canAutofill;
+    const autofillTitle = canAutofill
+      ? "Open and autofill in local Edge or Chrome"
+      : "Desktop-only feature. Hosted websites cannot control your local browser.";
+    return `
     <article class="queue-card">
       <div class="queue-top">
         <div>
@@ -214,12 +256,27 @@ function renderQueue() {
       </div>
       <div class="cover-note">${escapeHtml(item.coverNote)}</div>
       <div class="queue-actions">
-        <button class="secondary review-queue" data-queue-id="${item.id}">Review</button>
-        <button class="primary approve-queue" data-queue-id="${item.id}" ${item.status === "submitted" ? "disabled" : ""}>Approve and open</button>
-        <button class="secondary mark-submitted" data-queue-id="${item.id}" ${item.status === "submitted" ? "disabled" : ""}>Mark submitted</button>
+        <button class="secondary review-queue" data-queue-id="${item.id}">
+          <i data-lucide="eye" size="14"></i>
+          Review
+        </button>
+        <button class="secondary autofill-queue" data-queue-id="${item.id}" title="${escapeHtml(autofillTitle)}" ${autofillDisabled ? "disabled" : ""}>
+          <i data-lucide="zap" size="14"></i>
+          Open + autofill
+        </button>
+        <button class="primary approve-queue" data-queue-id="${item.id}" ${item.status === "submitted" ? "disabled" : ""}>
+          <i data-lucide="check" size="14"></i>
+          Approve and open
+        </button>
+        <button class="secondary mark-submitted" data-queue-id="${item.id}" ${item.status === "submitted" ? "disabled" : ""}>
+          <i data-lucide="send" size="14"></i>
+          Mark submitted
+        </button>
       </div>
     </article>
-  `).join("");
+  `;
+  }).join("");
+  if (window.lucide) lucide.createIcons();
 }
 
 function renderProfile() {
@@ -257,7 +314,9 @@ function renderActivity() {
 }
 
 function renderAnswers() {
-  const answers = state.data.answerBank;
+  const answers = state.data.answerBank || {};
+  els.emailInput.value = answers.email || "";
+  els.phoneInput.value = answers.phone || "";
   els.authorizationInput.value = answers.authorization || "";
   els.sponsorshipInput.value = answers.sponsorship || "";
   els.salaryInput.value = answers.salary || "";
@@ -274,6 +333,7 @@ function statusLabel(status) {
     ready: "Ready",
     "needs-answer": "Needs answer",
     approved: "Approved",
+    autofilled: "Autofilled",
     submitted: "Submitted",
     skipped: "Skipped"
   }[status] || status;
@@ -341,6 +401,20 @@ async function uploadResume(event) {
   }
 }
 
+async function removeResume() {
+  const done = setBusy(els.removeResumeBtn, "Removing...");
+  try {
+    state.data = await api("/api/resume", { method: "DELETE" });
+    els.resumeInput.value = "";
+    render();
+    showToast("Resume removed.");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    done();
+  }
+}
+
 async function savePreferences() {
   const done = setBusy(els.savePreferences, "Saving...");
   try {
@@ -370,6 +444,8 @@ async function saveAnswers(event) {
     state.data = await api("/api/answers", {
       method: "PATCH",
       body: JSON.stringify({
+        email: els.emailInput.value,
+        phone: els.phoneInput.value,
         authorization: els.authorizationInput.value,
         sponsorship: els.sponsorshipInput.value,
         salary: els.salaryInput.value,
@@ -389,12 +465,21 @@ async function saveAnswers(event) {
 async function addSource(event) {
   event.preventDefault();
   const done = setBusy(event.submitter, "Adding...");
+  
+  let name = els.sourceName.value.trim();
+  const type = els.sourceType.value;
+  if (!name) {
+    if (type === "linkedin") name = "LinkedIn Search";
+    else if (type === "remotive") name = "Remotive";
+    else name = els.sourceValue.value.trim();
+  }
+
   try {
     state.data = await api("/api/sources", {
       method: "POST",
       body: JSON.stringify({
-        name: els.sourceName.value,
-        type: els.sourceType.value,
+        name: name,
+        type: type,
         value: els.sourceValue.value
       })
     });
@@ -516,6 +601,7 @@ function openReview(queueId) {
       <span>${escapeHtml(value || "Blank")}</span>
     </div>
   `).join("");
+  if (window.lucide) lucide.createIcons();
   els.reviewDialog.showModal();
 }
 
@@ -528,6 +614,20 @@ async function approveQueue(queueId) {
       window.open(data.openUrl, "_blank", "noreferrer");
       showToast("Official application page opened.");
     }
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function autofillQueue(queueId) {
+  try {
+    showToast("Opening browser and autofilling the application page...");
+    const data = await api(`/api/queue/${queueId}/autofill`, { method: "POST", body: "{}" });
+    state.data = data;
+    render();
+    const filled = data.autofill?.filled?.length || 0;
+    const warnings = data.autofill?.warnings?.length || 0;
+    showToast(`Autofilled ${filled} field${filled === 1 ? "" : "s"}. Review before submitting.${warnings ? ` ${warnings} warning${warnings === 1 ? "" : "s"}.` : ""}`);
   } catch (error) {
     showToast(error.message);
   }
@@ -564,8 +664,35 @@ function setView(view) {
 
 function bindEvents() {
   els.resumeForm.addEventListener("submit", uploadResume);
+  els.removeResumeBtn.addEventListener("click", removeResume);
+  els.resumeInput.addEventListener("change", () => {
+    if (els.resumeInput.files.length) {
+      els.resumeFileName.textContent = els.resumeInput.files[0].name;
+      els.resumeMeta.textContent = "Selected locally. Click Upload to parse.";
+    }
+  });
+
+  // Antigravity cursor glow tracking
+  document.addEventListener("mousemove", (e) => {
+    const x = e.clientX;
+    const y = e.clientY;
+    document.documentElement.style.setProperty('--mouse-x', `${x}px`);
+    document.documentElement.style.setProperty('--mouse-y', `${y}px`);
+  });
+
   els.savePreferences.addEventListener("click", savePreferences);
   els.answersForm.addEventListener("submit", saveAnswers);
+  els.sourceType.addEventListener("change", () => {
+    const val = els.sourceType.value;
+    if (val === "linkedin" || val === "remotive") {
+      els.sourceValue.placeholder = "Search query (e.g. Software Developer)";
+    } else if (val === "generic") {
+      els.sourceValue.placeholder = "https://company.com/careers";
+    } else {
+      els.sourceValue.placeholder = "openai, vercel, or slug";
+    }
+  });
+
   els.sourceForm.addEventListener("submit", addSource);
   els.targetForm.addEventListener("submit", runTargetedApply);
   els.scanSources.addEventListener("click", scanSources);
@@ -594,9 +721,11 @@ function bindEvents() {
 
   els.queueList.addEventListener("click", event => {
     const review = event.target.closest(".review-queue");
+    const autofill = event.target.closest(".autofill-queue");
     const approve = event.target.closest(".approve-queue");
     const submitted = event.target.closest(".mark-submitted");
     if (review) openReview(review.dataset.queueId);
+    if (autofill) autofillQueue(autofill.dataset.queueId);
     if (approve) approveQueue(approve.dataset.queueId);
     if (submitted) markSubmitted(submitted.dataset.queueId);
   });
@@ -610,4 +739,205 @@ function bindEvents() {
 }
 
 bindEvents();
-loadState();
+let isSignupMode = false;
+document.querySelector("#authToggleMode").addEventListener("click", (e) => {
+  e.preventDefault();
+  isSignupMode = !isSignupMode;
+  e.target.textContent = isSignupMode ? "Sign in to account" : "Create an account";
+  document.querySelector("#authBtn").textContent = isSignupMode ? "Sign Up" : "Sign In";
+});
+
+document.querySelector("#authForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = document.querySelector("#authEmail").value;
+  const password = document.querySelector("#authPassword").value;
+  const errorEl = document.querySelector("#authError");
+  const btn = document.querySelector("#authBtn");
+  
+  errorEl.style.display = "none";
+  btn.disabled = true;
+  btn.textContent = "Loading...";
+  
+  try {
+    const endpoint = isSignupMode ? "/api/auth/signup" : "/api/auth/login";
+    await api(endpoint, {
+      method: "POST",
+      body: JSON.stringify({ email, password })
+    });
+    await initAuth();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = isSignupMode ? "Sign Up" : "Sign In";
+  }
+});
+
+document.querySelector("#logoutBtn").addEventListener("click", async () => {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+    window.location.reload();
+  } catch (err) {
+    console.error("Logout failed", err);
+  }
+});
+
+initAuth();
+if (window.lucide) lucide.createIcons();
+
+// --- Mouse Attraction Canvas Particle Engine ---
+function initParticles() {
+  const canvas = document.getElementById('particle-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  
+  let width, height;
+  let particles = [];
+  
+  // Google Colors: Blue, Red, Yellow, Green, Purple
+  const colors = ['#4285F4', '#EA4335', '#FBBC05', '#34A853', '#A142F4'];
+  
+  let mouse = { x: -1000, y: -1000, active: false };
+  let field = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.45 };
+  let time = 0;
+  
+  document.addEventListener('mousemove', (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.active = true;
+  });
+
+  document.addEventListener('mouseleave', () => {
+    mouse.active = false;
+  });
+
+  function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    createParticles();
+  }
+  
+  window.addEventListener('resize', resize);
+
+  function smoothstep(edge0, edge1, value) {
+    const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  }
+
+  function waveNoise(x, y, offset, speed = 1) {
+    return Math.sin(x * 0.012 + y * 0.006 + time * speed + offset)
+      * Math.cos(x * 0.004 - y * 0.01 + time * speed * 0.7 + offset);
+  }
+  
+  class Particle {
+    constructor() {
+      const theta = Math.random() * Math.PI * 2;
+      
+      this.baseX = Math.random() * width;
+      this.baseY = Math.random() * height;
+      
+      this.x = this.baseX;
+      this.y = this.baseY;
+      this.vx = 0;
+      this.vy = 0;
+      this.color = colors[Math.floor(Math.random() * colors.length)];
+      this.size = Math.random() * 2 + 1.5;
+      this.angle = theta + (Math.PI / 4);
+      this.seed = Math.random() * Math.PI * 2;
+      this.scale = 0.35;
+      this.velocity = 0;
+    }
+    
+    update() {
+      const dx = field.x - this.baseX;
+      const dy = field.y - this.baseY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const safeDistance = Math.max(distance, 0.001);
+      const forceDirectionX = dx / safeDistance;
+      const forceDirectionY = dy / safeDistance;
+      const ringRadius = Math.min(width, height) * 0.18
+        + Math.sin(time) * 16
+        + Math.cos(time * 3) * 10;
+      const ringWidth = Math.max(42, Math.min(width, height) * 0.075);
+      const innerWidth = Math.max(18, ringWidth * 0.34);
+      const noisyDistance = distance + waveNoise(this.baseX, this.baseY, this.seed, 0.35) * 7;
+      const ring = smoothstep(ringRadius - ringWidth * 2, ringRadius, distance)
+        - smoothstep(ringRadius, ringRadius + ringWidth, noisyDistance);
+      const inner = smoothstep(ringRadius + innerWidth, ringRadius, distance);
+      const ringForce = Math.pow(Math.max(0, ring), 3);
+      const innerForce = Math.max(0, inner) * 0.22;
+      const distantDrift = mouse.active ? Math.max(0, 1 - distance / Math.hypot(width, height)) * 0.018 : 0;
+      const midNoiseX = waveNoise(this.baseX, this.baseY, this.seed + 1.7, 0.32) * 0.42;
+      const midNoiseY = waveNoise(this.baseY, this.baseX, this.seed + 4.2, 0.3) * 0.42;
+
+      if (mouse.active) {
+        const pull = innerForce + distantDrift;
+        this.vx += forceDirectionX * pull;
+        this.vy += forceDirectionY * pull;
+        this.vx -= forceDirectionX * ringForce * 1.65;
+        this.vy -= forceDirectionY * ringForce * 1.65;
+      }
+
+      this.vx += midNoiseX * (0.03 + ringForce * 0.12);
+      this.vy += midNoiseY * (0.03 + ringForce * 0.12);
+
+      this.vx += (this.baseX - this.x) * 0.018;
+      this.vy += (this.baseY - this.y) * 0.018;
+      
+      this.vx *= 0.86; // Friction
+      this.vy *= 0.86;
+      
+      this.x += this.vx;
+      this.y += this.vy;
+      this.velocity = this.velocity * 0.62 + Math.min(1, Math.hypot(this.vx, this.vy) * 0.28);
+      this.scale += ((0.42 + ring * 1.1 + inner * 0.5) - this.scale) * 0.18;
+      this.angle = Math.atan2(this.y - field.y, this.x - field.x)
+        + waveNoise(this.baseX, this.baseY, this.seed + 8.1, 0.6) * 0.8;
+    }
+    
+    draw() {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.angle);
+      ctx.beginPath();
+      ctx.lineCap = "round";
+      ctx.lineWidth = this.size * (0.75 + this.velocity * 0.8);
+      const length = this.size * (1.2 + this.scale * 1.7);
+      ctx.moveTo(-length * 0.42, 0);
+      ctx.lineTo(length, 0);
+      ctx.strokeStyle = this.color;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  
+  function createParticles() {
+    particles = [];
+    const density = Math.floor((width * height) / 12000); 
+    for (let i = 0; i < density; i++) {
+      particles.push(new Particle());
+    }
+  }
+  
+  function animate() {
+    time += 0.016;
+    const idleX = width * 0.5 + Math.sin(time * 0.66 + 94.234) * width * 0.08;
+    const idleY = height * 0.45 + Math.sin(time * 0.75 + 21.028) * height * 0.04;
+    const targetX = mouse.active ? mouse.x + Math.sin(time * 0.66 + 94.234) * 18 : idleX;
+    const targetY = mouse.active ? mouse.y + Math.sin(time * 0.75 + 21.028) * 12 : idleY;
+    field.x += (targetX - field.x) * (mouse.active ? 0.045 : 0.018);
+    field.y += (targetY - field.y) * (mouse.active ? 0.045 : 0.018);
+    ctx.clearRect(0, 0, width, height);
+    particles.forEach(p => {
+      p.update();
+      p.draw();
+    });
+    requestAnimationFrame(animate);
+  }
+  
+  resize();
+  animate();
+}
+
+initParticles();

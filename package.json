@@ -1,0 +1,16 @@
+{
+  "name": "applypilot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Job application assistant with resume parsing, job scanning, matching, and review queue for local or hosted Node deployment.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "pdf-parse": "^2.4.5"
+  }
+}

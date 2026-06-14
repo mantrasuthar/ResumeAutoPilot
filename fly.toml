@@ -1,0 +1,19 @@
+app = "applypilot"
+primary_region = "yyz"
+
+[env]
+  NODE_ENV = "production"
+  HOST = "0.0.0.0"
+  DATA_DIR = "/data"
+  DISABLE_BROWSER_AUTOFILL = "1"
+
+[[mounts]]
+  source = "applypilot_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 4757
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
