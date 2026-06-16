@@ -2,7 +2,8 @@ const state = {
   data: null,
   view: "dashboard",
   reviewItem: null,
-  lastAutoTargetRole: ""
+  lastAutoTargetRole: "",
+  forceNextTargetRole: false
 };
 
 const els = {
@@ -118,14 +119,22 @@ function render() {
 
 function renderTargetDefaults() {
   const prefs = state.data.preferences;
-  const inferredRole = state.data.resume?.roles?.[0] || prefs.roles[0] || "";
-  const shouldAutofillRole = !els.targetRole.value.trim() || els.targetRole.value.trim() === state.lastAutoTargetRole;
+  const resumeRole = state.data.resume?.roles?.[0] || "";
+  const inferredRole = resumeRole || prefs.roles[0] || "";
+  const previousResumeRole = els.targetRole.dataset.resumeRole || "";
+  const shouldAutofillRole = state.forceNextTargetRole
+    || !els.targetRole.value.trim()
+    || els.targetRole.value.trim() === state.lastAutoTargetRole
+    || (resumeRole && resumeRole !== previousResumeRole);
   if (shouldAutofillRole) {
     els.targetRole.value = inferredRole;
     state.lastAutoTargetRole = inferredRole;
+    state.forceNextTargetRole = false;
   } else if (!state.lastAutoTargetRole) {
     state.lastAutoTargetRole = inferredRole;
   }
+  if (resumeRole) els.targetRole.dataset.resumeRole = resumeRole;
+  else delete els.targetRole.dataset.resumeRole;
   if (!els.targetLocation.value) els.targetLocation.value = prefs.locations[0] || "";
   if (!els.targetMinScore.value) els.targetMinScore.value = prefs.minimumScore;
   if (!els.targetLimit.value) els.targetLimit.value = Math.min(5, prefs.maxQueue || 3);
@@ -462,8 +471,10 @@ async function uploadResume(event) {
     const form = new FormData();
     form.append("resume", els.resumeInput.files[0]);
     state.data = await api("/api/upload-resume", { method: "POST", body: form });
+    state.forceNextTargetRole = true;
     render();
-    showToast("Resume uploaded and parsed.");
+    const role = state.data.resume?.roles?.[0];
+    showToast(role ? `Resume uploaded. Target role set to ${role}.` : "Resume uploaded. No target role was inferred.");
   } catch (error) {
     showToast(error.message);
   } finally {
