@@ -16,7 +16,9 @@ const LOG_FILE = path.join(DATA_DIR, "server.log");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
+const AUTH_SECRET = process.env.AUTH_SECRET || process.env.APP_PASSWORD || "applypilot-dev-auth-secret-change-me";
 const DISABLE_BROWSER_AUTOFILL = process.env.DISABLE_BROWSER_AUTOFILL === "1";
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 function getUserId() {
   const userId = asyncLocalStorage.getStore();
@@ -42,25 +44,111 @@ function verifyPassword(password, stored) {
   return key === hash;
 }
 
+function base64UrlEncode(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function base64UrlDecode(value) {
+  return Buffer.from(value, "base64url").toString("utf8");
+}
+
+function signValue(value) {
+  return crypto.createHmac("sha256", AUTH_SECRET).update(value).digest("base64url");
+}
+
+function createSessionToken(userId, email) {
+  const payload = base64UrlEncode(JSON.stringify({
+    userId,
+    email,
+    exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000
+  }));
+  return `${payload}.${signValue(payload)}`;
+}
+
+function readSignedSession(token) {
+  if (!token || !token.includes(".")) return null;
+  const [payload, signature] = token.split(".");
+  const expected = signValue(payload);
+  if (signature.length !== expected.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  try {
+    const session = JSON.parse(base64UrlDecode(payload));
+    if (!session.userId || !session.exp || session.exp <= Date.now()) return null;
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+function isHttpsRequest(req) {
+  return String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https";
+}
+
+function setSessionCookie(req, res, token) {
+  const attrs = [
+    `ApplyPilotSession=${encodeURIComponent(token)}`,
+    "HttpOnly",
+    "Path=/",
+    `Max-Age=${SESSION_MAX_AGE_SECONDS}`,
+    "SameSite=Lax"
+  ];
+  if (isHttpsRequest(req)) attrs.push("Secure");
+  res.setHeader("Set-Cookie", attrs.join("; "));
+}
+
+function clearSessionCookie(req, res) {
+  const attrs = [
+    "ApplyPilotSession=",
+    "HttpOnly",
+    "Path=/",
+    "Max-Age=0",
+    "SameSite=Lax"
+  ];
+  if (isHttpsRequest(req)) attrs.push("Secure");
+  res.setHeader("Set-Cookie", attrs.join("; "));
+}
+
 
 process.stdout?.on?.("error", () => {});
 process.stderr?.on?.("error", () => {});
 
 const ROLE_HINTS = [
+  "software developer",
   "product designer",
   "ux designer",
   "ui designer",
+  "ux researcher",
   "design systems",
   "frontend engineer",
+  "frontend developer",
+  "front end developer",
+  "backend engineer",
+  "backend developer",
+  "back end developer",
+  "full stack developer",
+  "full stack engineer",
+  "web developer",
+  "react developer",
+  "node developer",
+  "python developer",
+  "java developer",
   "software engineer",
+  "qa engineer",
+  "quality assurance analyst",
+  "devops engineer",
+  "cloud engineer",
   "product manager",
+  "project manager",
+  "business analyst",
   "data analyst",
   "data scientist",
   "machine learning",
   "marketing manager",
   "customer success",
   "sales engineer",
-  "operations manager"
+  "operations manager",
+  "graphic designer",
+  "digital marketing specialist"
 ];
 
 const SKILLS = [
@@ -248,11 +336,11 @@ async function handleRequest(req, res) {
     if (!users[email] || !verifyPassword(password, users[email].password)) {
       return sendJson(res, 401, { error: "Invalid credentials" });
     }
-    const token = crypto.randomBytes(32).toString("hex");
+    const token = createSessionToken(users[email].id, email);
     const sessions = JSON.parse(fs.readFileSync(SESSIONS_FILE));
-    sessions[token] = { userId: users[email].id, expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 7 };
+    sessions[token] = { userId: users[email].id, expiresAt: Date.now() + SESSION_MAX_AGE_SECONDS * 1000 };
     fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions));
-    res.setHeader("Set-Cookie", `ApplyPilotSession=${token}; HttpOnly; Path=/; Max-Age=${60*60*24*7}`);
+    setSessionCookie(req, res, token);
     return sendJson(res, 200, { ok: true, userId: users[email].id });
   }
 
@@ -266,11 +354,11 @@ async function handleRequest(req, res) {
     users[email] = { id: userId, password: hashPassword(password), createdAt: new Date().toISOString() };
     fs.writeFileSync(USERS_FILE, JSON.stringify(users));
     
-    const token = crypto.randomBytes(32).toString("hex");
+    const token = createSessionToken(userId, email);
     const sessions = JSON.parse(fs.readFileSync(SESSIONS_FILE));
-    sessions[token] = { userId, expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 7 };
+    sessions[token] = { userId, expiresAt: Date.now() + SESSION_MAX_AGE_SECONDS * 1000 };
     fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions));
-    res.setHeader("Set-Cookie", `ApplyPilotSession=${token}; HttpOnly; Path=/; Max-Age=${60*60*24*7}`);
+    setSessionCookie(req, res, token);
     return sendJson(res, 200, { ok: true, userId });
   }
 
@@ -278,11 +366,16 @@ async function handleRequest(req, res) {
   const token = cookies.ApplyPilotSession;
   let userId = null;
   if (token) {
-    ensureAuthFiles();
-    const sessions = JSON.parse(fs.readFileSync(SESSIONS_FILE));
-    const session = sessions[token];
-    if (session && session.expiresAt > Date.now()) {
-      userId = session.userId;
+    const signedSession = readSignedSession(token);
+    if (signedSession) {
+      userId = signedSession.userId;
+    } else {
+      ensureAuthFiles();
+      const sessions = JSON.parse(fs.readFileSync(SESSIONS_FILE));
+      const session = sessions[token];
+      if (session && session.expiresAt > Date.now()) {
+        userId = session.userId;
+      }
     }
   }
 
@@ -292,7 +385,7 @@ async function handleRequest(req, res) {
       delete sessions[token];
       fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions));
     }
-    res.setHeader("Set-Cookie", `ApplyPilotSession=; HttpOnly; Path=/; Max-Age=0`);
+    clearSessionCookie(req, res);
     return sendJson(res, 200, { ok: true });
   }
 
@@ -431,7 +524,7 @@ function parseResume(text, file) {
   const email = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
   const phone = text.match(/(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/)?.[0] || "";
   const skills = SKILLS.filter(skill => lower.includes(skill.toLowerCase()));
-  const roles = ROLE_HINTS.filter(role => lower.includes(role));
+  const roles = inferResumeRoles(text, skills);
   const years = text.match(/(\d+)\+?\s+years?/i)?.[1] || "";
   const locations = extractLocations(text);
   const keywords = [...new Set([...skills, ...roles, ...uniqueWords.filter(word => word.length > 5).slice(0, 24)])].slice(0, 40);
@@ -452,6 +545,77 @@ function parseResume(text, file) {
     wordCount: words.length,
     preview: text.replace(/\s+/g, " ").trim().slice(0, 700)
   };
+}
+
+function inferResumeRoles(text, skills = []) {
+  const lower = String(text || "").toLowerCase();
+  const firstPage = lower.slice(0, 1800);
+  const skillSet = new Set(skills.map(skill => skill.toLowerCase()));
+  const scores = new Map();
+
+  const add = (role, points) => {
+    const normalized = titleCaseRole(role);
+    scores.set(normalized, (scores.get(normalized) || 0) + points);
+  };
+
+  for (const role of ROLE_HINTS) {
+    if (lower.includes(role)) add(role, firstPage.includes(role) ? 80 : 55);
+  }
+
+  const phraseRules = [
+    [/front[\s-]?end.{0,24}(developer|engineer)|\breact developer\b|\bui developer\b/i, "Frontend Engineer", 45],
+    [/back[\s-]?end.{0,24}(developer|engineer)|\bnode developer\b|\bapi developer\b/i, "Backend Engineer", 45],
+    [/full[\s-]?stack.{0,24}(developer|engineer)/i, "Full Stack Developer", 55],
+    [/\bsoftware (developer|engineer)\b|\bapplication developer\b|\bprogrammer\b/i, "Software Developer", 45],
+    [/\bproduct designer\b|\bux\/ui\b|\bui\/ux\b|\buser experience\b/i, "Product Designer", 45],
+    [/\bux designer\b|\buser research\b|\busability\b/i, "UX Designer", 40],
+    [/\bdata analyst\b|\bbusiness intelligence\b|\bpower bi\b|\btableau\b/i, "Data Analyst", 45],
+    [/\bdata scientist\b|\bmachine learning\b|\bml engineer\b/i, "Data Scientist", 45],
+    [/\bquality assurance\b|\bqa\b|\btest automation\b/i, "QA Engineer", 40],
+    [/\bdevops\b|\bcloud engineer\b|\bkubernetes\b|\bci\/cd\b/i, "DevOps Engineer", 40],
+    [/\bproduct manager\b|\bproduct owner\b/i, "Product Manager", 45],
+    [/\bbusiness analyst\b|\brequirements analyst\b/i, "Business Analyst", 40],
+    [/\bmarketing\b|\bseo\b|\bcampaigns?\b/i, "Digital Marketing Specialist", 35]
+  ];
+
+  for (const [pattern, role, points] of phraseRules) {
+    if (pattern.test(text)) add(role, points);
+  }
+
+  const hasAny = (...items) => items.some(item => skillSet.has(item) || lower.includes(item));
+  if (hasAny("react", "javascript", "typescript", "html", "css", "vue", "angular")) add("Frontend Engineer", 30);
+  if (hasAny("node", "node.js", "express", "api", "rest", "graphql", "java", "spring", "django", "flask")) add("Backend Engineer", 28);
+  if (hasAny("javascript", "python", "java", "git", "github", "sql")) add("Software Developer", 22);
+  if (hasAny("figma", "ux", "ui", "user research", "design systems", "accessibility")) add("UX Designer", 28);
+  if (hasAny("analytics", "sql", "data visualization")) add("Data Analyst", 24);
+  if (hasAny("aws", "azure", "docker", "kubernetes", "ci/cd")) add("DevOps Engineer", 24);
+
+  return [...scores.entries()]
+    .filter(([, score]) => score >= 35)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([role]) => role)
+    .slice(0, 6);
+}
+
+function titleCaseRole(role) {
+  const acronyms = new Set(["ui", "ux", "qa", "seo"]);
+  return String(role || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => acronyms.has(word) ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function mergeResumeRoles(inferredRoles, currentRoles) {
+  const byKey = new Map();
+  for (const role of [...(inferredRoles || []), ...(currentRoles || [])]) {
+    const clean = String(role || "").trim();
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (!byKey.has(key)) byKey.set(key, clean);
+  }
+  return [...byKey.values()].slice(0, 8);
 }
 
 function extractLocations(text) {
@@ -1640,6 +1804,9 @@ async function handleApi(req, res, pathname) {
 
       const state = readState();
       state.resume = parsed;
+      if (parsed.roles?.length) {
+        state.preferences.roles = mergeResumeRoles(parsed.roles, state.preferences.roles);
+      }
       state.jobs = state.jobs.map(job => {
         const match = scoreJob(job, state.resume, state.preferences);
         return {

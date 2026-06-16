@@ -1,7 +1,8 @@
 const state = {
   data: null,
   view: "dashboard",
-  reviewItem: null
+  reviewItem: null,
+  lastAutoTargetRole: ""
 };
 
 const els = {
@@ -67,6 +68,7 @@ const els = {
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
+    credentials: "same-origin",
     headers: options.body instanceof FormData
       ? options.headers
       : { "Content-Type": "application/json", ...(options.headers || {}) }
@@ -116,7 +118,14 @@ function render() {
 
 function renderTargetDefaults() {
   const prefs = state.data.preferences;
-  if (!els.targetRole.value) els.targetRole.value = prefs.roles[0] || "";
+  const inferredRole = state.data.resume?.roles?.[0] || prefs.roles[0] || "";
+  const shouldAutofillRole = !els.targetRole.value.trim() || els.targetRole.value.trim() === state.lastAutoTargetRole;
+  if (shouldAutofillRole) {
+    els.targetRole.value = inferredRole;
+    state.lastAutoTargetRole = inferredRole;
+  } else if (!state.lastAutoTargetRole) {
+    state.lastAutoTargetRole = inferredRole;
+  }
   if (!els.targetLocation.value) els.targetLocation.value = prefs.locations[0] || "";
   if (!els.targetMinScore.value) els.targetMinScore.value = prefs.minimumScore;
   if (!els.targetLimit.value) els.targetLimit.value = Math.min(5, prefs.maxQueue || 3);
