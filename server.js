@@ -118,7 +118,6 @@ const ROLE_HINTS = [
   "ux designer",
   "ui designer",
   "ux researcher",
-  "design systems",
   "frontend engineer",
   "frontend developer",
   "front end developer",
@@ -216,7 +215,7 @@ function defaultState() {
     createdAt: now,
     updatedAt: now,
     preferences: {
-      roles: ["Product Designer", "UX Designer", "Frontend Engineer"],
+      roles: ["Software Developer", "Frontend Engineer", "Backend Engineer"],
       locations: ["Remote Canada", "Canada", "Saskatchewan", "Ontario", "Toronto", "Saskatoon", "Regina"],
       minimumScore: 55,
       maxQueue: 5,
@@ -571,8 +570,8 @@ function inferResumeRoles(text, skills = []) {
     [/back[\s-]?end.{0,24}(developer|engineer)|\bnode developer\b|\bapi developer\b/i, "Backend Engineer", 45],
     [/full[\s-]?stack.{0,24}(developer|engineer)/i, "Full Stack Developer", 55],
     [/\bsoftware (developer|engineer)\b|\bapplication developer\b|\bprogrammer\b/i, "Software Developer", 45],
-    [/\bproduct designer\b|\bux\/ui\b|\bui\/ux\b|\buser experience\b/i, "Product Designer", 45],
-    [/\bux designer\b|\buser research\b|\busability\b/i, "UX Designer", 40],
+    [/\bproduct designer\b|\bux\/ui\s+designer\b|\bui\/ux\s+designer\b|\buser experience designer\b/i, "Product Designer", 45],
+    [/\bux designer\b|\buser experience designer\b|\bux researcher\b/i, "UX Designer", 40],
     [/\bdata analyst\b|\bbusiness intelligence\b|\bpower bi\b|\btableau\b/i, "Data Analyst", 45],
     [/\bdata scientist\b|\bmachine learning\b|\bml engineer\b/i, "Data Scientist", 45],
     [/\bquality assurance\b|\bqa\b|\btest automation\b/i, "QA Engineer", 40],
@@ -590,7 +589,7 @@ function inferResumeRoles(text, skills = []) {
   if (hasAny("react", "javascript", "typescript", "html", "css", "vue", "angular")) add("Frontend Engineer", 30);
   if (hasAny("node", "node.js", "express", "api", "rest", "graphql", "java", "spring", "django", "flask")) add("Backend Engineer", 28);
   if (hasAny("javascript", "python", "java", "git", "github", "sql")) add("Software Developer", 22);
-  if (hasAny("figma", "ux", "ui", "user research", "design systems", "accessibility")) add("UX Designer", 28);
+  if (hasAny("figma", "design systems", "user research") && /\b(product|ux|ui|visual|graphic)\s+design(er)?\b/i.test(text)) add("UX Designer", 28);
   if (hasAny("analytics", "sql", "data visualization")) add("Data Analyst", 24);
   if (hasAny("aws", "azure", "docker", "kubernetes", "ci/cd")) add("DevOps Engineer", 24);
 
@@ -619,7 +618,9 @@ function extractExperienceTitles(text) {
     [/\bnode(\.js)?\s+(developer|engineer)\b/i, "Node Developer"],
     [/\bpython\s+(developer|engineer)\b/i, "Python Developer"],
     [/\bjava\s+(developer|engineer)\b/i, "Java Developer"],
-    [/\b(product|ux|ui)\s+designer\b/i, "Product Designer"],
+    [/\bproduct\s+designer\b/i, "Product Designer"],
+    [/\bux\s+designer\b|\buser experience designer\b/i, "UX Designer"],
+    [/\bui\s+designer\b|\buser interface designer\b/i, "UI Designer"],
     [/\bux\s+researcher\b/i, "UX Researcher"],
     [/\b(data|business)\s+analyst\b/i, "Data Analyst"],
     [/\bdata\s+scientist\b/i, "Data Scientist"],
@@ -652,11 +653,21 @@ function titleCaseRole(role) {
 }
 
 function mergeResumeRoles(inferredRoles, currentRoles) {
+  const genericDefaults = new Set([
+    "product designer",
+    "ux designer",
+    "ui designer",
+    "frontend engineer",
+    "software developer",
+    "backend engineer"
+  ]);
+  const inferredKeys = new Set((inferredRoles || []).map(role => String(role || "").trim().toLowerCase()).filter(Boolean));
   const byKey = new Map();
   for (const role of [...(inferredRoles || []), ...(currentRoles || [])]) {
     const clean = String(role || "").trim();
     if (!clean) continue;
     const key = clean.toLowerCase();
+    if (inferredKeys.size && genericDefaults.has(key) && !inferredKeys.has(key)) continue;
     if (!byKey.has(key)) byKey.set(key, clean);
   }
   return [...byKey.values()].slice(0, 8);
