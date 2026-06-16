@@ -562,6 +562,10 @@ function inferResumeRoles(text, skills = []) {
     if (lower.includes(role)) add(role, firstPage.includes(role) ? 80 : 55);
   }
 
+  for (const role of extractExperienceTitles(text)) {
+    add(role, 70);
+  }
+
   const phraseRules = [
     [/front[\s-]?end.{0,24}(developer|engineer)|\breact developer\b|\bui developer\b/i, "Frontend Engineer", 45],
     [/back[\s-]?end.{0,24}(developer|engineer)|\bnode developer\b|\bapi developer\b/i, "Backend Engineer", 45],
@@ -591,10 +595,50 @@ function inferResumeRoles(text, skills = []) {
   if (hasAny("aws", "azure", "docker", "kubernetes", "ci/cd")) add("DevOps Engineer", 24);
 
   return [...scores.entries()]
-    .filter(([, score]) => score >= 35)
+    .filter(([, score]) => score >= 22)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([role]) => role)
     .slice(0, 6);
+}
+
+function extractExperienceTitles(text) {
+  const titles = [];
+  const lines = String(text || "")
+    .split(/\r?\n|(?<=\.)\s{2,}/)
+    .map(line => line.replace(/\s+/g, " ").trim())
+    .filter(line => line.length >= 3 && line.length <= 110)
+    .slice(0, 180);
+
+  const titleRules = [
+    [/\b(senior\s+)?software\s+(developer|engineer)\b/i, "Software Developer"],
+    [/\b(front[\s-]?end|frontend)\s+(developer|engineer)\b/i, "Frontend Engineer"],
+    [/\b(back[\s-]?end|backend)\s+(developer|engineer)\b/i, "Backend Engineer"],
+    [/\bfull[\s-]?stack\s+(developer|engineer)\b/i, "Full Stack Developer"],
+    [/\bweb\s+developer\b/i, "Web Developer"],
+    [/\breact\s+(developer|engineer)\b/i, "React Developer"],
+    [/\bnode(\.js)?\s+(developer|engineer)\b/i, "Node Developer"],
+    [/\bpython\s+(developer|engineer)\b/i, "Python Developer"],
+    [/\bjava\s+(developer|engineer)\b/i, "Java Developer"],
+    [/\b(product|ux|ui)\s+designer\b/i, "Product Designer"],
+    [/\bux\s+researcher\b/i, "UX Researcher"],
+    [/\b(data|business)\s+analyst\b/i, "Data Analyst"],
+    [/\bdata\s+scientist\b/i, "Data Scientist"],
+    [/\b(machine\s+learning|ml)\s+engineer\b/i, "Machine Learning Engineer"],
+    [/\b(devops|cloud)\s+engineer\b/i, "DevOps Engineer"],
+    [/\bqa\s+(engineer|analyst)|quality\s+assurance\s+(engineer|analyst)\b/i, "QA Engineer"],
+    [/\bproduct\s+manager\b/i, "Product Manager"],
+    [/\bproject\s+manager\b/i, "Project Manager"],
+    [/\bbusiness\s+analyst\b/i, "Business Analyst"],
+    [/\bmarketing\s+(manager|specialist|coordinator)\b/i, "Digital Marketing Specialist"],
+    [/\bgraphic\s+designer\b/i, "Graphic Designer"]
+  ];
+
+  for (const line of lines) {
+    for (const [pattern, role] of titleRules) {
+      if (pattern.test(line)) titles.push(role);
+    }
+  }
+  return [...new Set(titles)].slice(0, 6);
 }
 
 function titleCaseRole(role) {

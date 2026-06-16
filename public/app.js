@@ -160,7 +160,8 @@ function renderResume() {
     return;
   }
   els.resumeFileName.textContent = resume.filename;
-  els.resumeSubtitle.textContent = `${resume.skills.length} skills, ${resume.roles.length} role hints, ${resume.wordCount} words.`;
+  const roleText = resume.roles?.length ? `Target roles: ${resume.roles.slice(0, 3).join(", ")}.` : "No target role inferred.";
+  els.resumeSubtitle.textContent = `${roleText} ${resume.skills.length} skills, ${resume.wordCount} words.`;
   els.resumeMeta.textContent = `${resume.parseQuality} parse, uploaded ${formatDate(resume.uploadedAt)}.`;
   els.removeResumeBtn.style.display = "inline-flex";
   els.uploadResumeBtn.innerHTML = '<i data-lucide="refresh-cw" size="16"></i> Replace';
@@ -472,8 +473,11 @@ async function uploadResume(event) {
     form.append("resume", els.resumeInput.files[0]);
     state.data = await api("/api/upload-resume", { method: "POST", body: form });
     state.forceNextTargetRole = true;
+    const role = state.data.resume?.roles?.[0] || "";
+    els.targetRole.value = role;
+    els.targetRole.dataset.resumeRole = role;
+    state.lastAutoTargetRole = role;
     render();
-    const role = state.data.resume?.roles?.[0];
     showToast(role ? `Resume uploaded. Target role set to ${role}.` : "Resume uploaded. No target role was inferred.");
   } catch (error) {
     showToast(error.message);
