@@ -144,8 +144,8 @@
       <main class="main">
         <section class="commandbar">
           <div>
-            <h2 id="viewTitle">Dashboard</h2>
-            <p id="viewSubtitle">Real scan and application preparation for your local profile.</p>
+            <h2 id="viewTitle">Find your next role</h2>
+            <p id="viewSubtitle">Upload your resume, choose a role, and review the matches.</p>
           </div>
           <div class="command-actions">
             <button class="secondary" id="refreshState" type="button">
@@ -164,6 +164,25 @@
         </section>
 
         <section class="workspace" id="dashboard">
+          <section class="getting-started" id="gettingStarted">
+            <div class="getting-started-copy">
+              <span class="eyebrow">Start here</span>
+              <h3 id="gettingStartedTitle">Upload your resume</h3>
+              <p id="gettingStartedText">We will extract your experience and suggest a target role. You can change it any time.</p>
+            </div>
+            <div class="getting-started-action">
+              <button class="primary" id="quickUploadResume" type="button">
+                <i data-lucide="file-up" size="16"></i>
+                Upload resume
+              </button>
+              <button class="secondary" id="quickScanSources" type="button" style="display: none;">
+                <i data-lucide="search" size="16"></i>
+                Find matching jobs
+              </button>
+              <p id="gettingStartedHint">PDF, Word, or TXT</p>
+            </div>
+          </section>
+
           <div class="stats-grid">
             <div class="stat">
               <div class="stat-icon"><i data-lucide="briefcase" size="16"></i></div>
@@ -187,46 +206,49 @@
             </div>
           </div>
 
-          <section class="panel">
+          <section class="panel target-workflow">
             <div class="panel-head">
               <div>
-                <h3>Apply to a specific role</h3>
-                <p>Target a role, company, or location and prepare only matching drafts.</p>
+                <h3>What would you like to apply for?</h3>
+                <p>We prefill the role from your resume. Keep it or make it your own.</p>
               </div>
             </div>
             <form id="targetForm" class="target-form">
               <label>
-                Role
-                <input id="targetRole" placeholder="Product Designer, Frontend Engineer, UX Writer">
-              </label>
-              <label>
-                Company
-                <input id="targetCompany" placeholder="Shopify, Wealthsimple, 7shifts">
+                Target role
+                <input id="targetRole" placeholder="e.g. Software Developer">
               </label>
               <label>
                 Location
-                <input id="targetLocation" placeholder="Remote Canada, Toronto, Saskatoon">
+                <input id="targetLocation" placeholder="e.g. Remote Canada or Toronto">
               </label>
-              <div class="target-numbers">
-                <label>
-                  Min score
-                  <input id="targetMinScore" type="number" min="0" max="100" step="1">
-                </label>
-                <label>
-                  Drafts
-                  <input id="targetLimit" type="number" min="1" max="25" step="1" value="3">
-                </label>
-              </div>
-              <label class="check-row">
-                <input id="targetScanBefore" type="checkbox" checked>
-                <span>Scan sources first</span>
-              </label>
-              <button class="primary" id="targetApply" type="submit">
+              <button class="primary" id="targetApply" type="submit" disabled>
                 <i data-lucide="target" size="16"></i>
-                Find and prepare
+                Find matching jobs
               </button>
+              <details class="advanced-target-options">
+                <summary>More options</summary>
+                <div class="advanced-target-grid">
+                  <label>
+                    Company
+                    <input id="targetCompany" placeholder="Optional: Shopify">
+                  </label>
+                  <label>
+                    Minimum match score
+                    <input id="targetMinScore" type="number" min="0" max="100" step="1">
+                  </label>
+                  <label>
+                    Number of drafts
+                    <input id="targetLimit" type="number" min="1" max="25" step="1" value="3">
+                  </label>
+                  <label class="check-row">
+                    <input id="targetScanBefore" type="checkbox" checked>
+                    <span>Refresh job sources before searching</span>
+                  </label>
+                </div>
+              </details>
             </form>
-            <div id="targetResult" class="target-result">Example: role "Software Developer", company "Shopify", location "Remote Canada".</div>
+            <div id="targetResult" class="target-result">Add a resume first, then we will suggest a role and search relevant jobs.</div>
           </section>
 
           <section class="panel">

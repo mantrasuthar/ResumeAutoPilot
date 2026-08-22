@@ -3,7 +3,8 @@ const state = {
   view: "dashboard",
   reviewItem: null,
   lastAutoTargetRole: "",
-  forceNextTargetRole: false
+  forceNextTargetRole: false,
+  uploadFromWelcome: false
 };
 
 const els = {
@@ -14,6 +15,12 @@ const els = {
   uploadResumeBtn: document.querySelector("#uploadResumeBtn"),
   resumeFileName: document.querySelector("#resumeFileName"),
   resumeMeta: document.querySelector("#resumeMeta"),
+  quickUploadResume: document.querySelector("#quickUploadResume"),
+  quickScanSources: document.querySelector("#quickScanSources"),
+  gettingStarted: document.querySelector("#gettingStarted"),
+  gettingStartedTitle: document.querySelector("#gettingStartedTitle"),
+  gettingStartedText: document.querySelector("#gettingStartedText"),
+  gettingStartedHint: document.querySelector("#gettingStartedHint"),
   resumeSubtitle: document.querySelector("#resumeSubtitle"),
   rolesInput: document.querySelector("#rolesInput"),
   locationsInput: document.querySelector("#locationsInput"),
@@ -85,6 +92,7 @@ async function initAuth() {
     document.querySelector("#auth-screen").style.display = "none";
     document.querySelector(".app-shell").style.display = "grid";
     await loadState();
+    setView(state.view);
   } catch (err) {
     document.querySelector("#auth-screen").style.display = "flex";
     document.querySelector(".app-shell").style.display = "none";
@@ -106,6 +114,7 @@ function render() {
   if (!state.data) return;
   renderPreferences();
   renderResume();
+  renderGettingStarted();
   renderStats();
   renderTargetDefaults();
   renderJobs();
@@ -115,6 +124,29 @@ function render() {
   renderActivity();
   renderAnswers();
   if (window.lucide) lucide.createIcons();
+}
+
+function renderGettingStarted() {
+  const resume = state.data.resume;
+  const dashboard = document.querySelector("#dashboard");
+  dashboard.classList.toggle("dashboard-first-run", !resume);
+  els.targetApply.disabled = !resume;
+
+  if (!resume) {
+    els.gettingStartedTitle.textContent = "Upload your resume";
+    els.gettingStartedText.textContent = "We will extract your experience and suggest a target role. You can change it any time.";
+    els.gettingStartedHint.textContent = "PDF, Word, or TXT";
+    els.quickUploadResume.style.display = "inline-flex";
+    els.quickScanSources.style.display = "none";
+    return;
+  }
+
+  const role = resume.roles?.[0] || "your preferred role";
+  els.gettingStartedTitle.textContent = "Your profile is ready";
+  els.gettingStartedText.textContent = `We found ${role} from your resume. Choose a location below, then find current matches.`;
+  els.gettingStartedHint.textContent = "You can update your resume or preferences from the Resume tab.";
+  els.quickUploadResume.style.display = "none";
+  els.quickScanSources.style.display = "inline-flex";
 }
 
 function renderTargetDefaults() {
@@ -462,12 +494,12 @@ function setBusy(button, busyText) {
 }
 
 async function uploadResume(event) {
-  event.preventDefault();
+  event?.preventDefault();
   if (!els.resumeInput.files.length) {
     showToast("Choose a resume file first.");
     return;
   }
-  const done = setBusy(event.submitter, "Uploading...");
+  const done = setBusy(event?.submitter || els.quickUploadResume || els.uploadResumeBtn, "Uploading...");
   try {
     const form = new FormData();
     form.append("resume", els.resumeInput.files[0]);
@@ -482,6 +514,7 @@ async function uploadResume(event) {
   } catch (error) {
     showToast(error.message);
   } finally {
+    state.uploadFromWelcome = false;
     done();
   }
 }
@@ -737,14 +770,15 @@ function setView(view) {
   const isMobileResume = view === "resume" && window.matchMedia("(max-width: 900px)").matches;
   const workspaceView = view === "resume" ? "dashboard" : view;
   layout?.classList.toggle("show-mobile-resume", isMobileResume);
+  layout?.classList.toggle("show-resume-panel", view === "resume");
   document.querySelectorAll(".workspace").forEach(panel => panel.classList.toggle("hidden", panel.id !== workspaceView));
   document.querySelectorAll(".rail-button").forEach(button => button.classList.toggle("active", button.dataset.target === view));
   const titles = {
-    dashboard: ["Dashboard", "Real scan and application preparation for your local profile."],
-    resume: ["Resume", "Resume settings live in the left panel."],
-    sources: ["Sources", "Add company career pages and ATS job boards."],
-    queue: ["Queue", "Review drafts before opening official application pages."],
-    answers: ["Answer bank", "Reusable answers for application drafts."]
+    dashboard: ["Find your next role", "Upload your resume, choose a role, and review the matches."],
+    resume: ["Your resume", "Update your file and matching preferences."],
+    sources: ["Job sources", "Add a company careers page when you need it."],
+    queue: ["Your applications", "Review each draft before opening the official application page."],
+    answers: ["Saved answers", "Optional details that speed up application drafts."]
   };
   const [title, subtitle] = titles[view] || titles.dashboard;
   document.querySelector("#viewTitle").textContent = title;
@@ -758,8 +792,15 @@ function bindEvents() {
     if (els.resumeInput.files.length) {
       els.resumeFileName.textContent = els.resumeInput.files[0].name;
       els.resumeMeta.textContent = "Selected locally. Click Upload to parse.";
+      if (state.uploadFromWelcome) uploadResume();
     }
   });
+
+  els.quickUploadResume.addEventListener("click", () => {
+    state.uploadFromWelcome = true;
+    els.resumeInput.click();
+  });
+  els.quickScanSources.addEventListener("click", scanSources);
 
   // Antigravity cursor glow tracking
   document.addEventListener("mousemove", (e) => {
