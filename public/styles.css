@@ -2214,3 +2214,41 @@ dialog::backdrop {
 @keyframes layoutFadeIn {
   to { opacity: 1; }
 }
+
+/* --- PERFORMANCE GUARDRAILS --- */
+@media (max-width: 900px), (pointer: coarse) {
+  #particle-canvas {
+    display: none;
+  }
+
+  .titlebar,
+  .rail,
+  #auth-screen,
+  dialog::backdrop {
+    backdrop-filter: none !important;
+  }
+
+  .brand,
+  .layout,
+  .workspace {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  #particle-canvas {
+    display: none;
+  }
+}

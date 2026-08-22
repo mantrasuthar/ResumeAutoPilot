@@ -976,10 +976,19 @@ if (window.lucide) lucide.createIcons();
 function initParticles() {
   const canvas = document.getElementById('particle-canvas');
   if (!canvas) return;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const compactDevice = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+  const saveData = Boolean(navigator.connection?.saveData);
+  if (reducedMotion || compactDevice || saveData) {
+    canvas.hidden = true;
+    return;
+  }
   const ctx = canvas.getContext('2d');
   
   let width, height;
   let particles = [];
+  let animationFrame = null;
+  let lastFrameAt = 0;
   
   // Google Colors: Blue, Red, Yellow, Green, Purple
   const colors = ['#4285F4', '#EA4335', '#FBBC05', '#34A853', '#A142F4'];
@@ -1100,14 +1109,22 @@ function initParticles() {
   
   function createParticles() {
     particles = [];
-    const density = Math.floor((width * height) / 12000); 
+    const density = Math.min(90, Math.floor((width * height) / 24000));
     for (let i = 0; i < density; i++) {
       particles.push(new Particle());
     }
   }
   
-  function animate() {
-    time += 0.016;
+  function animate(timestamp) {
+    if (document.hidden) {
+      animationFrame = null;
+      return;
+    }
+    animationFrame = requestAnimationFrame(animate);
+    if (timestamp - lastFrameAt < 33) return;
+    const elapsed = lastFrameAt ? Math.min(50, timestamp - lastFrameAt) : 33;
+    lastFrameAt = timestamp;
+    time += elapsed / 1000;
     const idleX = width * 0.5 + Math.sin(time * 0.66 + 94.234) * width * 0.08;
     const idleY = height * 0.45 + Math.sin(time * 0.75 + 21.028) * height * 0.04;
     const targetX = mouse.active ? mouse.x + Math.sin(time * 0.66 + 94.234) * 18 : idleX;
@@ -1119,11 +1136,17 @@ function initParticles() {
       p.update();
       p.draw();
     });
-    requestAnimationFrame(animate);
   }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && animationFrame === null) {
+      lastFrameAt = 0;
+      animationFrame = requestAnimationFrame(animate);
+    }
+  });
   
   resize();
-  animate();
+  animationFrame = requestAnimationFrame(animate);
 }
 
 initParticles();
