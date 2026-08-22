@@ -677,6 +677,21 @@ function extractLocations(text) {
   const found = [];
   const common = [
     "remote",
+    "india",
+    "remote india",
+    "bengaluru",
+    "bangalore",
+    "hyderabad",
+    "pune",
+    "mumbai",
+    "delhi",
+    "new delhi",
+    "noida",
+    "gurugram",
+    "gurgaon",
+    "chennai",
+    "kolkata",
+    "ahmedabad",
     "canada",
     "remote canada",
     "saskatchewan",
@@ -1265,7 +1280,7 @@ async function performScan(state, options = {}) {
   const scannedJobs = [];
   const results = [];
   const sources = [
-    ...state.sources,
+    ...(options.includeConfigured === false ? [] : state.sources),
     ...(options.extraSources || [])
   ];
 
@@ -1369,14 +1384,14 @@ function generateCoverNote(state, job) {
   return `I am interested in the ${job.title} role at ${job.company}.${skillText}${roleText} I would welcome the chance to bring practical product judgment, clear execution, and measurable impact to this team.`;
 }
 
-function targetCandidates(state, target) {
+function targetCandidates(state, target, options = {}) {
   const roleTerms = importantTerms(target.role);
   const companyTerms = importantTerms(target.company);
   const locationTerms = importantTerms(target.location);
   const minScore = clamp(Number(target.minScore ?? state.preferences.minimumScore), 0, 100);
 
   return state.jobs
-    .filter(job => !state.queue.some(item => item.jobId === job.id && item.status !== "skipped"))
+    .filter(job => options.includeQueued || !state.queue.some(item => item.jobId === job.id && item.status !== "skipped"))
     .map(job => ({ job, targetScore: scoreTargetFit(job, roleTerms, companyTerms, locationTerms) }))
     .filter(result => result.targetScore > 0)
     .filter(result => result.job.score >= minScore || result.targetScore >= 14)
@@ -1862,6 +1877,9 @@ async function handleApi(req, res, pathname) {
       if (parsed.roles?.length) {
         state.preferences.roles = mergeResumeRoles(parsed.roles, state.preferences.roles);
       }
+      if (parsed.locations?.length) {
+        state.preferences.locations = parsed.locations.slice(0, 6);
+      }
       state.jobs = state.jobs.map(job => {
         const match = scoreJob(job, state.resume, state.preferences);
         return {
@@ -1877,6 +1895,54 @@ async function handleApi(req, res, pathname) {
       addActivity(state, `Resume uploaded and parsed: ${file.filename}.`);
       writeState(state);
       return sendJson(res, 200, publicState(state));
+    }
+
+    if (req.method === "POST" && pathname === "/api/jobs/match-resume") {
+      const state = readState();
+      if (!state.resume) {
+        return sendJson(res, 400, { error: "Upload a resume before searching for matching jobs." });
+      }
+
+      const resumeLocations = state.resume.locations || [];
+      const inferredLocation = resumeLocations.find(location => /^remote\s+\S+/i.test(location))
+        || resumeLocations.find(location => !/^remote$/i.test(location))
+        || resumeLocations[0]
+        || "Worldwide";
+      const target = {
+        role: state.resume.roles?.[0] || state.preferences.roles?.[0] || "",
+        company: "",
+        location: inferredLocation,
+        minScore: state.preferences.minimumScore
+      };
+      if (!target.role) {
+        return sendJson(res, 400, { error: "No target role could be identified from this resume." });
+      }
+
+      const scan = await performScan(state, {
+        includeConfigured: false,
+        targetLocation: target.location,
+        extraSources: buildTargetedSources(target)
+      });
+      const matches = targetCandidates(state, target, { includeQueued: true });
+      const matchIds = new Set(matches.map(job => job.id));
+      state.jobs = state.jobs
+        .map(job => ({ ...job, status: matchIds.has(job.id) ? "matched" : "low-match" }))
+        .sort((a, b) => {
+          const aMatch = matchIds.has(a.id) ? 1 : 0;
+          const bMatch = matchIds.has(b.id) ? 1 : 0;
+          return bMatch - aMatch || b.score - a.score || dateValue(b.postedAt) - dateValue(a.postedAt);
+        });
+      addActivity(state, `Automatic resume search found ${matches.length} matching job${matches.length === 1 ? "" : "s"} for ${target.role}.`);
+      writeState(state);
+      return sendJson(res, 200, {
+        ...publicState(state),
+        autoMatch: {
+          role: target.role,
+          location: target.location,
+          count: matches.length,
+          scan
+        }
+      });
     }
 
     if (req.method === "DELETE" && pathname === "/api/resume") {

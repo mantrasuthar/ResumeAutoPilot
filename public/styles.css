@@ -1984,7 +1984,8 @@ dialog::backdrop {
 }
 
 .command-actions #refreshState,
-.command-actions #startApplying {
+.command-actions #startApplying,
+.command-actions #scanSources {
   display: none;
 }
 
@@ -2136,6 +2137,31 @@ dialog::backdrop {
 }
 
 @media (max-width: 700px) {
+  .layout:not(.show-resume-panel) {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 72px;
+  }
+
+  .layout:not(.show-resume-panel) .main {
+    width: 100%;
+    min-width: 0;
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .layout:not(.show-resume-panel) .rail {
+    width: 100%;
+    min-width: 0;
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .command-actions {
+    display: none;
+  }
+
   .getting-started {
     display: grid;
     gap: 18px;

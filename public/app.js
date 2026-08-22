@@ -4,7 +4,9 @@ const state = {
   reviewItem: null,
   lastAutoTargetRole: "",
   forceNextTargetRole: false,
-  uploadFromWelcome: false
+  uploadFromWelcome: false,
+  autoSearching: false,
+  lastAutoMatchCount: null
 };
 
 const els = {
@@ -103,6 +105,7 @@ async function loadState() {
   try {
     state.data = await api("/api/state");
     els.serverStatus.textContent = state.data.capabilities?.hostedMode ? "Hosted website" : "Running locally";
+    if (state.data.resume) els.jobFilter.value = "matched";
     render();
   } catch (error) {
     els.serverStatus.textContent = "Server unavailable";
@@ -141,10 +144,22 @@ function renderGettingStarted() {
     return;
   }
 
+  if (state.autoSearching) {
+    els.gettingStartedTitle.textContent = "Finding your best matches";
+    els.gettingStartedText.textContent = "Your resume is ready. We are searching current jobs using the role and location found in it.";
+    els.gettingStartedHint.textContent = "This can take a few seconds.";
+    els.quickUploadResume.style.display = "none";
+    els.quickScanSources.style.display = "none";
+    return;
+  }
+
   const role = resume.roles?.[0] || "your preferred role";
   els.gettingStartedTitle.textContent = "Your profile is ready";
-  els.gettingStartedText.textContent = `We found ${role} from your resume. Choose a location below, then find current matches.`;
-  els.gettingStartedHint.textContent = "You can update your resume or preferences from the Resume tab.";
+  const matchText = state.lastAutoMatchCount === null
+    ? "Your matching jobs are listed below."
+    : `${state.lastAutoMatchCount} matching job${state.lastAutoMatchCount === 1 ? "" : "s"} found and listed below.`;
+  els.gettingStartedText.textContent = `We identified ${role} from your resume. ${matchText}`;
+  els.gettingStartedHint.textContent = "Use the Resume tab only when you want to change your file or preferences.";
   els.quickUploadResume.style.display = "none";
   els.quickScanSources.style.display = "inline-flex";
 }
@@ -493,13 +508,31 @@ function setBusy(button, busyText) {
   };
 }
 
+async function findResumeMatches() {
+  state.autoSearching = true;
+  renderGettingStarted();
+  const matchedState = await api("/api/jobs/match-resume", { method: "POST", body: "{}" });
+  state.data = matchedState;
+  state.lastAutoMatchCount = matchedState.autoMatch?.count ?? 0;
+  state.autoSearching = false;
+  els.jobFilter.value = "matched";
+  render();
+  const role = matchedState.autoMatch?.role || state.data.resume?.roles?.[0] || "your resume";
+  const location = matchedState.autoMatch?.location || "any location";
+  els.targetResult.textContent = `${state.lastAutoMatchCount} current match${state.lastAutoMatchCount === 1 ? "" : "es"} found for ${role} in ${location}.`;
+  setView("dashboard");
+  document.querySelector("#jobsList")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  return state.lastAutoMatchCount;
+}
+
 async function uploadResume(event) {
   event?.preventDefault();
   if (!els.resumeInput.files.length) {
     showToast("Choose a resume file first.");
     return;
   }
-  const done = setBusy(event?.submitter || els.quickUploadResume || els.uploadResumeBtn, "Uploading...");
+  const busyButton = event?.submitter || (state.uploadFromWelcome ? els.quickUploadResume : els.uploadResumeBtn);
+  const done = setBusy(busyButton, "Uploading...");
   try {
     const form = new FormData();
     form.append("resume", els.resumeInput.files[0]);
@@ -510,8 +543,17 @@ async function uploadResume(event) {
     els.targetRole.dataset.resumeRole = role;
     state.lastAutoTargetRole = role;
     render();
-    showToast(role ? `Resume uploaded. Target role set to ${role}.` : "Resume uploaded. No target role was inferred.");
+    if (!role) {
+      showToast("Resume uploaded, but no target role could be identified.");
+      return;
+    }
+
+    showToast(`Resume parsed. Searching current ${role} jobs now.`);
+    const matchCount = await findResumeMatches();
+    showToast(`${matchCount} resume-matched job${matchCount === 1 ? "" : "s"} found.`);
   } catch (error) {
+    state.autoSearching = false;
+    if (state.data) render();
     showToast(error.message);
   } finally {
     state.uploadFromWelcome = false;
@@ -791,8 +833,8 @@ function bindEvents() {
   els.resumeInput.addEventListener("change", () => {
     if (els.resumeInput.files.length) {
       els.resumeFileName.textContent = els.resumeInput.files[0].name;
-      els.resumeMeta.textContent = "Selected locally. Click Upload to parse.";
-      if (state.uploadFromWelcome) uploadResume();
+      els.resumeMeta.textContent = "Selected. Parsing and finding matching jobs...";
+      uploadResume();
     }
   });
 
@@ -800,7 +842,19 @@ function bindEvents() {
     state.uploadFromWelcome = true;
     els.resumeInput.click();
   });
-  els.quickScanSources.addEventListener("click", scanSources);
+  els.quickScanSources.addEventListener("click", async () => {
+    const done = setBusy(els.quickScanSources, "Searching...");
+    try {
+      const matchCount = await findResumeMatches();
+      showToast(`${matchCount} resume-matched job${matchCount === 1 ? "" : "s"} found.`);
+    } catch (error) {
+      state.autoSearching = false;
+      if (state.data) render();
+      showToast(error.message);
+    } finally {
+      done();
+    }
+  });
 
   // Antigravity cursor glow tracking
   document.addEventListener("mousemove", (e) => {
