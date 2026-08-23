@@ -62,13 +62,27 @@ const els = {
   profileFacts: document.querySelector("#profileFacts"),
   activityList: document.querySelector("#activityList"),
   answersForm: document.querySelector("#answersForm"),
+  firstNameInput: document.querySelector("#firstNameInput"),
+  lastNameInput: document.querySelector("#lastNameInput"),
   emailInput: document.querySelector("#emailInput"),
   phoneInput: document.querySelector("#phoneInput"),
+  addressInput: document.querySelector("#addressInput"),
+  cityInput: document.querySelector("#cityInput"),
+  provinceInput: document.querySelector("#provinceInput"),
+  postalCodeInput: document.querySelector("#postalCodeInput"),
+  countryInput: document.querySelector("#countryInput"),
+  linkedinInput: document.querySelector("#linkedinInput"),
+  githubInput: document.querySelector("#githubInput"),
   authorizationInput: document.querySelector("#authorizationInput"),
   sponsorshipInput: document.querySelector("#sponsorshipInput"),
   salaryInput: document.querySelector("#salaryInput"),
   availabilityInput: document.querySelector("#availabilityInput"),
   portfolioInput: document.querySelector("#portfolioInput"),
+  currentCompanyInput: document.querySelector("#currentCompanyInput"),
+  currentTitleInput: document.querySelector("#currentTitleInput"),
+  schoolInput: document.querySelector("#schoolInput"),
+  degreeInput: document.querySelector("#degreeInput"),
+  yearsExperienceInput: document.querySelector("#yearsExperienceInput"),
   reviewDialog: document.querySelector("#reviewDialog"),
   dialogTitle: document.querySelector("#dialogTitle"),
   dialogMeta: document.querySelector("#dialogMeta"),
@@ -408,10 +422,11 @@ function renderQueue() {
   els.queueList.className = "queue-list";
   const canAutofill = Boolean(state.data.capabilities?.browserAutofill);
   els.queueList.innerHTML = state.data.queue.map(item => {
-    const autofillDisabled = item.status === "submitted" || !canAutofill;
+    const autofillDisabled = item.status === "submitted";
     const autofillTitle = canAutofill
       ? "Open and autofill in local Edge or Chrome"
-      : "Desktop-only feature. Hosted websites cannot control your local browser.";
+      : "Open the official page and copy prepared answers";
+    const autofillLabel = canAutofill ? "Open + autofill" : "Open + answers";
     return `
     <article class="queue-card">
       <div class="queue-top">
@@ -433,7 +448,7 @@ function renderQueue() {
         </button>
         <button class="secondary autofill-queue" data-queue-id="${item.id}" title="${escapeHtml(autofillTitle)}" ${autofillDisabled ? "disabled" : ""}>
           <i data-lucide="zap" size="14"></i>
-          Open + autofill
+          ${autofillLabel}
         </button>
         <button class="primary approve-queue" data-queue-id="${item.id}" ${item.status === "submitted" ? "disabled" : ""}>
           <i data-lucide="check" size="14"></i>
@@ -464,7 +479,10 @@ function renderProfile() {
     ["Phone", resume.phone || "Not found"],
     ["Skills", resume.skills.length ? resume.skills.join(", ") : "None detected"],
     ["Roles", resume.roles.length ? resume.roles.join(", ") : "None detected"],
-    ["Locations", resume.locations.length ? resume.locations.join(", ") : "None detected"]
+    ["Locations", resume.locations.length ? resume.locations.join(", ") : "None detected"],
+    ["Current company", resume.details?.currentCompany || "Not found"],
+    ["Experience", resume.details?.yearsExperience ? `${resume.details.yearsExperience} years` : "Not found"],
+    ["Education", resume.details?.degree || resume.details?.school || "Not found"]
   ];
   els.profileFacts.innerHTML = facts.map(([label, value]) => `
     <div class="fact-item">
@@ -486,13 +504,27 @@ function renderActivity() {
 
 function renderAnswers() {
   const answers = state.data.answerBank || {};
+  els.firstNameInput.value = answers.firstName || "";
+  els.lastNameInput.value = answers.lastName || "";
   els.emailInput.value = answers.email || "";
   els.phoneInput.value = answers.phone || "";
+  els.addressInput.value = answers.address || "";
+  els.cityInput.value = answers.city || "";
+  els.provinceInput.value = answers.province || "";
+  els.postalCodeInput.value = answers.postalCode || "";
+  els.countryInput.value = answers.country || "";
+  els.linkedinInput.value = answers.linkedin || "";
+  els.githubInput.value = answers.github || "";
   els.authorizationInput.value = answers.authorization || "";
   els.sponsorshipInput.value = answers.sponsorship || "";
   els.salaryInput.value = answers.salary || "";
   els.availabilityInput.value = answers.availability || "";
   els.portfolioInput.value = answers.portfolio || "";
+  els.currentCompanyInput.value = answers.currentCompany || "";
+  els.currentTitleInput.value = answers.currentTitle || "";
+  els.schoolInput.value = answers.school || "";
+  els.degreeInput.value = answers.degree || "";
+  els.yearsExperienceInput.value = answers.yearsExperience || "";
 }
 
 function tags(items, flavor) {
@@ -648,13 +680,27 @@ async function saveAnswers(event) {
     state.data = await api("/api/answers", {
       method: "PATCH",
       body: JSON.stringify({
+        firstName: els.firstNameInput.value,
+        lastName: els.lastNameInput.value,
         email: els.emailInput.value,
         phone: els.phoneInput.value,
+        address: els.addressInput.value,
+        city: els.cityInput.value,
+        province: els.provinceInput.value,
+        postalCode: els.postalCodeInput.value,
+        country: els.countryInput.value,
+        linkedin: els.linkedinInput.value,
+        github: els.githubInput.value,
         authorization: els.authorizationInput.value,
         sponsorship: els.sponsorshipInput.value,
         salary: els.salaryInput.value,
         availability: els.availabilityInput.value,
-        portfolio: els.portfolioInput.value
+        portfolio: els.portfolioInput.value,
+        currentCompany: els.currentCompanyInput.value,
+        currentTitle: els.currentTitleInput.value,
+        school: els.schoolInput.value,
+        degree: els.degreeInput.value,
+        yearsExperience: els.yearsExperienceInput.value
       })
     });
     render();
@@ -823,16 +869,70 @@ async function approveQueue(queueId) {
   }
 }
 
-async function autofillQueue(queueId) {
+function formatAnswerPackage(payload = {}) {
+  const labels = {
+    fullName: "Full name", email: "Email", phone: "Phone", address: "Street address",
+    city: "City", province: "Province/state", postalCode: "Postal/ZIP code", country: "Country",
+    linkedin: "LinkedIn", github: "GitHub", portfolio: "Portfolio", currentCompany: "Current company",
+    currentTitle: "Current title", school: "School", degree: "Degree", yearsExperience: "Years of experience",
+    authorization: "Work authorization", sponsorship: "Sponsorship", salary: "Salary expectation",
+    availability: "Availability", skills: "Skills", coverNote: "Cover note"
+  };
+  return Object.entries(labels)
+    .filter(([key]) => String(payload[key] || "").trim())
+    .map(([key, label]) => `${label}: ${String(payload[key]).trim()}`)
+    .join("\n\n");
+}
+
+async function copyText(value) {
+  if (!value) return false;
   try {
-    showToast("Opening browser and autofilling the application page...");
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    return copied;
+  }
+}
+
+async function autofillQueue(queueId) {
+  const hostedAssist = !state.data.capabilities?.browserAutofill;
+  const applicationWindow = hostedAssist ? window.open("about:blank", "_blank") : null;
+  if (applicationWindow) {
+    applicationWindow.document.title = "Opening application...";
+    applicationWindow.document.body.textContent = "Preparing your application details...";
+  }
+  try {
+    showToast(hostedAssist ? "Preparing answers and opening the application..." : "Opening browser and autofilling the application page...");
     const data = await api(`/api/queue/${queueId}/autofill`, { method: "POST", body: "{}" });
     state.data = data;
     render();
+    if (data.autofill?.mode === "hosted-assist") {
+      const answerPackage = formatAnswerPackage(data.autofill.payload);
+      const copied = await copyText(answerPackage);
+      if (applicationWindow && data.openUrl) {
+        applicationWindow.location.replace(data.openUrl);
+      } else if (data.openUrl) {
+        window.open(data.openUrl, "_blank", "noreferrer");
+      }
+      showToast(copied
+        ? "Application opened. Your prepared answers are copied and ready to paste."
+        : "Application opened. Review your saved answers in ApplyPilot while completing the form.");
+      return;
+    }
+    applicationWindow?.close();
     const filled = data.autofill?.filled?.length || 0;
     const warnings = data.autofill?.warnings?.length || 0;
     showToast(`Autofilled ${filled} field${filled === 1 ? "" : "s"}. Review before submitting.${warnings ? ` ${warnings} warning${warnings === 1 ? "" : "s"}.` : ""}`);
   } catch (error) {
+    applicationWindow?.close();
     showToast(error.message);
   }
 }

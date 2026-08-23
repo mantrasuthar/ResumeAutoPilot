@@ -383,12 +383,48 @@
             </div>
             <form id="answersForm" class="answers-form">
               <label>
+                First name
+                <input id="firstNameInput" autocomplete="given-name">
+              </label>
+              <label>
+                Last name
+                <input id="lastNameInput" autocomplete="family-name">
+              </label>
+              <label>
                 Email
-                <input id="emailInput" type="email">
+                <input id="emailInput" type="email" autocomplete="email">
               </label>
               <label>
                 Phone
-                <input id="phoneInput" type="tel">
+                <input id="phoneInput" type="tel" autocomplete="tel">
+              </label>
+              <label>
+                Street address
+                <input id="addressInput" autocomplete="street-address">
+              </label>
+              <label>
+                City
+                <input id="cityInput" autocomplete="address-level2">
+              </label>
+              <label>
+                Province or state
+                <input id="provinceInput" autocomplete="address-level1">
+              </label>
+              <label>
+                Postal or ZIP code
+                <input id="postalCodeInput" autocomplete="postal-code">
+              </label>
+              <label>
+                Country
+                <input id="countryInput" autocomplete="country-name">
+              </label>
+              <label>
+                LinkedIn
+                <input id="linkedinInput" type="url">
+              </label>
+              <label>
+                GitHub
+                <input id="githubInput" type="url">
               </label>
               <label>
                 Work authorization
@@ -408,7 +444,27 @@
               </label>
               <label>
                 Portfolio
-                <input id="portfolioInput">
+                <input id="portfolioInput" type="url">
+              </label>
+              <label>
+                Current company
+                <input id="currentCompanyInput">
+              </label>
+              <label>
+                Current job title
+                <input id="currentTitleInput">
+              </label>
+              <label>
+                School
+                <input id="schoolInput">
+              </label>
+              <label>
+                Degree
+                <input id="degreeInput">
+              </label>
+              <label>
+                Years of experience
+                <input id="yearsExperienceInput" inputmode="numeric">
               </label>
               <button class="primary" type="submit">
                 <i data-lucide="save" size="16"></i>

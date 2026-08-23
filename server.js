@@ -325,11 +325,25 @@ function defaultState() {
     ],
     targetRuns: [],
     answerBank: {
-      authorization: "Authorized to work in Canada",
-      sponsorship: "No sponsorship required",
+      firstName: "",
+      lastName: "",
+      address: "",
+      city: "",
+      province: "",
+      postalCode: "",
+      country: "",
+      authorization: "",
+      sponsorship: "",
       salary: "",
       availability: "",
-      portfolio: ""
+      portfolio: "",
+      linkedin: "",
+      github: "",
+      currentCompany: "",
+      currentTitle: "",
+      school: "",
+      degree: "",
+      yearsExperience: ""
     }
   };
 }
@@ -695,6 +709,8 @@ function parseResume(text, file) {
   const years = normalizedText.match(/(\d+)\+?\s+years?/i)?.[1] || "";
   const locations = extractLocations(normalizedText);
   const keywords = extractResumeKeywords(normalizedText, skills, roles);
+  const details = extractResumeDetails(normalizedText, roles);
+  const name = extractCandidateName(normalizedText);
 
   return {
     id: id("resume"),
@@ -704,14 +720,86 @@ function parseResume(text, file) {
     parseQuality: file.quality,
     email,
     phone,
+    name,
     skills,
     roles,
     years,
     locations,
     keywords,
+    details,
     wordCount: words.length,
     preview: normalizedText.replace(/\s+/g, " ").trim().slice(0, 700)
   };
+}
+
+function extractCandidateName(text) {
+  const blocked = /\b(resume|curriculum|developer|engineer|designer|manager|analyst|specialist|coordinator|consultant|student|professional|profile|summary)\b/i;
+  const line = String(text || "").split(/\r?\n/).slice(0, 10).find(value => {
+    const clean = value.trim();
+    const words = clean.split(/\s+/);
+    return clean.length <= 70
+      && words.length >= 2
+      && words.length <= 4
+      && words.every(word => /^[A-Za-z][A-Za-z.'-]+$/.test(word))
+      && !blocked.test(clean);
+  }) || "";
+  const words = line.trim().split(/\s+/).filter(Boolean).map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+  return {
+    firstName: words[0] || "",
+    lastName: words.length > 1 ? words[words.length - 1] : "",
+    fullName: words.join(" ")
+  };
+}
+
+function extractResumeDetails(text, roles = []) {
+  const lines = String(text || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const urls = String(text || "").match(/https?:\/\/[^\s<>]+/gi) || [];
+  const linkedin = urls.find(url => /linkedin\.com/i.test(url)) || "";
+  const github = urls.find(url => /github\.com/i.test(url)) || "";
+  const portfolio = urls.find(url => !/linkedin\.com|github\.com/i.test(url)) || "";
+  const postalCode = String(text || "").match(/\b[A-Z]\d[A-Z][ -]?\d[A-Z]\d\b/i)?.[0]?.toUpperCase() || "";
+  const header = String(text || "").slice(0, 500);
+  const countries = ["Canada", "India", "United States", "USA", "United Kingdom", "Australia", "Germany", "France"];
+  const country = countries
+    .map(value => ({ value: value === "USA" ? "United States" : value, index: header.toLowerCase().indexOf(value.toLowerCase()) }))
+    .filter(item => item.index >= 0)
+    .sort((a, b) => a.index - b.index)[0]?.value || "";
+  const degreeLine = lines.find(line => /\b(bachelor|master|doctor|ph\.?d|diploma|associate|b\.?tech|m\.?tech|b\.?sc|m\.?sc|mba)\b/i.test(line)) || "";
+  const schoolLine = lines.find(line => /\b(university|college|polytechnic|institute of technology|school of)\b/i.test(line) && line.length <= 140) || "";
+  const experienceIndex = lines.findIndex(line => /^(professional |work |employment )?experience$/i.test(line));
+  const experienceLines = experienceIndex >= 0 ? lines.slice(experienceIndex + 1, experienceIndex + 16) : lines;
+  const companyLine = experienceLines.find(line => /\b(inc\.?|ltd\.?|llc|corp\.?|corporation|company|technologies|solutions|systems|consulting)\b/i.test(line) && line.length <= 140) || "";
+  const companyMatch = companyLine.match(/^(.+?\b(?:inc\.?|ltd\.?|llc|corp\.?|corporation|company|technologies|solutions|systems|consulting))\b/i);
+
+  return {
+    linkedin,
+    github,
+    portfolio,
+    postalCode,
+    country,
+    degree: degreeLine.split(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}\b/i)[0].trim().slice(0, 140),
+    school: schoolLine.slice(0, 140),
+    currentTitle: roles[0] || "",
+    currentCompany: (companyMatch?.[1] || companyLine).slice(0, 100),
+    yearsExperience: estimateExperienceYears(text)
+  };
+}
+
+function estimateExperienceYears(text) {
+  const experienceText = String(text || "").split(/\b(?:professional |work |employment )?experience\b/i)[1]?.split(/\b(projects?|education|certifications?)\b/i)[0] || "";
+  const months = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+  const ranges = [...experienceText.matchAll(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{4})\s*[-–—]\s*(?:(Present|Current)|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4})/gi)];
+  let totalMonths = 0;
+  for (const match of ranges) {
+    const start = new Date(Number(match[2]), months[match[1].slice(0, 3).toLowerCase()], 1);
+    const endText = match[0].split(/[-–—]/).pop().trim();
+    const endMatch = endText.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{4})/i);
+    const end = /present|current/i.test(endText)
+      ? new Date()
+      : endMatch ? new Date(Number(endMatch[2]), months[endMatch[1].slice(0, 3).toLowerCase()], 1) : start;
+    totalMonths += Math.max(0, (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth());
+  }
+  return totalMonths ? String(Math.max(1, Math.round(totalMonths / 12))) : "";
 }
 
 function inferResumeRoles(text, skills = []) {
@@ -1551,13 +1639,7 @@ function createQueueItem(state, job, options = {}) {
     runId: options.runId || null,
     target: options.target || null,
     coverNote: generateCoverNote(state, job),
-    answers: {
-      authorization: state.answerBank.authorization,
-      sponsorship: state.answerBank.sponsorship,
-      salary: state.answerBank.salary,
-      availability: state.answerBank.availability,
-      portfolio: state.answerBank.portfolio
-    },
+    answers: { ...state.answerBank },
     audit: [
       {
         at: new Date().toISOString(),
@@ -1595,28 +1677,56 @@ function targetCandidates(state, target, options = {}) {
 
 function buildAutofillPayload(state, item) {
   const resume = state.resume || {};
-  const answers = item.answers || state.answerBank || {};
+  const answers = { ...(item.answers || {}), ...(state.answerBank || {}) };
   const nameGuess = guessName(resume);
   return {
-    fullName: nameGuess.fullName,
-    firstName: nameGuess.firstName,
-    lastName: nameGuess.lastName,
-    email: resume.email || answers.email || "",
-    phone: resume.phone || answers.phone || "",
-    location: item.location || state.preferences.locations?.[0] || "Canada",
-    country: "Canada",
-    authorization: answers.authorization || "Authorized to work in Canada",
-    sponsorship: answers.sponsorship || "No sponsorship required",
+    fullName: [answers.firstName || nameGuess.firstName, answers.lastName || nameGuess.lastName].filter(Boolean).join(" ") || nameGuess.fullName,
+    firstName: answers.firstName || nameGuess.firstName,
+    lastName: answers.lastName || nameGuess.lastName,
+    email: answers.email || resume.email || "",
+    phone: answers.phone || resume.phone || "",
+    address: answers.address || "",
+    city: answers.city || "",
+    province: answers.province || "",
+    postalCode: answers.postalCode || resume.details?.postalCode || "",
+    location: [answers.city, answers.province].filter(Boolean).join(", ") || state.preferences.locations?.[0] || item.location || "",
+    country: answers.country || resume.details?.country || "",
+    authorization: answers.authorization || "",
+    sponsorship: answers.sponsorship || "",
     salary: answers.salary || "",
     availability: answers.availability || "",
-    portfolio: answers.portfolio || "",
+    portfolio: answers.portfolio || resume.details?.portfolio || "",
+    linkedin: answers.linkedin || resume.details?.linkedin || "",
+    github: answers.github || resume.details?.github || "",
+    currentCompany: answers.currentCompany || resume.details?.currentCompany || "",
+    currentTitle: answers.currentTitle || resume.details?.currentTitle || resume.roles?.[0] || "",
+    school: answers.school || resume.details?.school || "",
+    degree: answers.degree || resume.details?.degree || "",
+    yearsExperience: answers.yearsExperience || resume.details?.yearsExperience || resume.years || "",
+    skills: (resume.skills || []).join(", "),
     coverNote: item.coverNote || "",
     jobTitle: item.title,
     company: item.company
   };
 }
 
+function safeApplicationUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 function guessName(resume) {
+  if (resume.name?.firstName || resume.name?.lastName) {
+    return {
+      firstName: resume.name.firstName || "",
+      lastName: resume.name.lastName || "",
+      fullName: resume.name.fullName || [resume.name.firstName, resume.name.lastName].filter(Boolean).join(" ")
+    };
+  }
   const preview = String(resume.preview || "").replace(/\s+/g, " ").trim();
   const filename = String(resume.filename || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
   const source = preview && !preview.startsWith("%PDF") ? preview : filename;
@@ -1657,10 +1767,13 @@ async function openAndAutofillApplication(state, item) {
   });
   browser.unref();
 
-  const target = await waitForBrowserTarget(port, item.applyUrl);
+  let target = await waitForBrowserTarget(port, item.applyUrl);
   await sleep(2800);
   const clickResult = await cdpEvaluate(target.webSocketDebuggerUrl, buildApplyClickScript());
-  if (clickResult?.clicked) await sleep(3200);
+  if (clickResult?.clicked) {
+    await sleep(3200);
+    target = await waitForAutofillTarget(port, target, item.applyUrl);
+  }
 
   const payload = buildAutofillPayload(state, item);
   const fillResult = await cdpEvaluate(target.webSocketDebuggerUrl, buildAutofillScript(payload));
@@ -1672,6 +1785,23 @@ async function openAndAutofillApplication(state, item) {
     clickedApplyText: clickResult?.text || "",
     ...fillResult
   };
+}
+
+async function waitForAutofillTarget(port, originalTarget, originalUrl) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 3000) {
+    try {
+      const targets = (await fetchJson(`http://127.0.0.1:${port}/json/list`))
+        .filter(target => target.type === "page" && target.webSocketDebuggerUrl && /^https?:/i.test(target.url || ""));
+      const navigatedOriginal = targets.find(target => target.webSocketDebuggerUrl === originalTarget.webSocketDebuggerUrl && target.url !== originalUrl);
+      const newApplicationTab = targets.find(target => target.webSocketDebuggerUrl !== originalTarget.webSocketDebuggerUrl && target.url !== originalUrl);
+      if (newApplicationTab || navigatedOriginal) return newApplicationTab || navigatedOriginal;
+    } catch {
+      // The page may be between navigations; retry briefly.
+    }
+    await sleep(350);
+  }
+  return originalTarget;
 }
 
 function findBrowserExecutable() {
@@ -1804,7 +1934,18 @@ function buildApplyClickScript() {
       text: (el.innerText || el.textContent || el.getAttribute("aria-label") || "").trim(),
       href: el.href || ""
     }));
-    const action = actions.find(item => /^(apply|apply now|apply for this job|start application)$/i.test(item.text));
+    const action = actions
+      .filter(item => /\\b(apply|start application|continue application)\\b/i.test(item.text))
+      .filter(item => !/filter|search|view application|application status|saved/i.test(item.text))
+      .sort((a, b) => {
+        const score = item => {
+          return (/^(apply|apply now|start application)$/i.test(item.text) ? 20 : 0)
+            + (/apply for this (job|position|role)/i.test(item.text) ? 12 : 0)
+            + (/\\/apply|application/i.test(item.href) ? 6 : 0)
+            - Math.min(item.text.length, 80) / 20;
+        };
+        return score(b) - score(a);
+      })[0];
     if (!action) return { clicked: false, reason: "no-apply-action" };
     action.el.click();
     return { clicked: true, text: action.text, href: action.href };
@@ -1862,14 +2003,26 @@ function buildAutofillScript(payload) {
       if (/first\\s*name|given\\s*name/.test(descriptor)) return payload.firstName;
       if (/last\\s*name|family\\s*name|surname/.test(descriptor)) return payload.lastName;
       if (/full\\s*name|your\\s*name|name/.test(descriptor) && !/company|employer|school/.test(descriptor)) return payload.fullName;
-      if (/portfolio|website|personal\\s*site|linkedin|github/.test(descriptor)) return payload.portfolio;
+      if (/linkedin/.test(descriptor)) return payload.linkedin;
+      if (/github/.test(descriptor)) return payload.github;
+      if (/portfolio|website|personal\\s*site/.test(descriptor)) return payload.portfolio;
       if (/cover|message|additional\\s*information|why.*interested|note/.test(descriptor)) return payload.coverNote;
       if (/salary|compensation|pay/.test(descriptor)) return payload.salary;
       if (/available|start\\s*date|notice/.test(descriptor)) return payload.availability;
-      if (/location|city|province|state/.test(descriptor)) return payload.location;
+      if (/street|address\\s*(line)?\\s*1|home address|mailing address/.test(descriptor) && !/email/.test(descriptor)) return payload.address;
+      if (/postal|zip/.test(descriptor)) return payload.postalCode;
+      if (/\\bcity\\b|town/.test(descriptor)) return payload.city;
+      if (/province|\\bstate\\b|region/.test(descriptor)) return payload.province;
+      if (/location/.test(descriptor)) return payload.location;
       if (/country/.test(descriptor)) return payload.country;
       if (/work.*authori|authori.*work|legally.*work/.test(descriptor)) return payload.authorization;
       if (/sponsor|visa/.test(descriptor)) return payload.sponsorship;
+      if (/current.*company|current.*employer|most recent.*employer/.test(descriptor)) return payload.currentCompany;
+      if (/current.*(title|position)|most recent.*(title|position)/.test(descriptor)) return payload.currentTitle;
+      if (/school|university|college|institution/.test(descriptor) && !/email/.test(descriptor)) return payload.school;
+      if (/degree|qualification|field of study/.test(descriptor)) return payload.degree;
+      if (/years?.*(experience)|experience.*years?/.test(descriptor)) return payload.yearsExperience;
+      if (/skills?|technologies|expertise/.test(descriptor)) return payload.skills;
       if (type === "email") return payload.email;
       if (type === "tel") return payload.phone;
       return "";
@@ -1877,11 +2030,17 @@ function buildAutofillScript(payload) {
     const chooseSelect = (el, descriptor) => {
       const options = [...el.options];
       const wants = [];
-      if (/country/.test(descriptor)) wants.push("canada");
-      if (/sponsor|visa/.test(descriptor)) wants.push("no", "not require", "do not");
-      if (/work.*authori|authori.*work|legally.*work/.test(descriptor)) wants.push("yes", "authorized", "canada");
+      if (/country/.test(descriptor)) wants.push(payload.country);
+      if (/province|\\bstate\\b|region/.test(descriptor)) wants.push(payload.province);
+      if (/sponsor|visa/.test(descriptor)) wants.push(payload.sponsorship, "no", "not require", "do not");
+      if (/work.*authori|authori.*work|legally.*work/.test(descriptor)) wants.push(payload.authorization, "yes", "authorized");
+      if (/years?.*(experience)|experience.*years?/.test(descriptor)) wants.push(payload.yearsExperience);
       if (!wants.length) return false;
-      const option = options.find(opt => wants.some(want => textOf(opt.textContent).toLowerCase().includes(want)));
+      const normalizedWants = wants.filter(Boolean).map(want => textOf(want).toLowerCase());
+      const option = options.find(opt => {
+        const optionText = textOf(opt.textContent + " " + opt.value).toLowerCase();
+        return normalizedWants.some(want => optionText.includes(want) || want.includes(optionText));
+      });
       if (!option) return false;
       el.value = option.value;
       el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -1892,6 +2051,10 @@ function buildAutofillScript(payload) {
     const chooseBoolean = (el, descriptor) => {
       const value = textOf(el.value || el.getAttribute("aria-label") || "").toLowerCase();
       const surrounding = descriptor + " " + value;
+      if (/gender|ethnic|race|veteran|disability|aboriginal|indigenous|sexual orientation|pronoun/.test(descriptor)) {
+        warnings.push("Optional demographic question left for manual review.");
+        return false;
+      }
       if (/sponsor|visa/.test(surrounding) && /(^|\\b)(no|not require|do not)(\\b|$)/.test(surrounding)) {
         el.click();
         return true;
@@ -2086,6 +2249,27 @@ async function handleApi(req, res, pathname) {
 
       const state = readState();
       state.resume = parsed;
+      const name = guessName(parsed);
+      const inferredAnswers = {
+        firstName: name.firstName,
+        lastName: name.lastName,
+        email: parsed.email,
+        phone: parsed.phone,
+        postalCode: parsed.details?.postalCode,
+        country: parsed.details?.country,
+        portfolio: parsed.details?.portfolio,
+        linkedin: parsed.details?.linkedin,
+        github: parsed.details?.github,
+        currentCompany: parsed.details?.currentCompany,
+        currentTitle: parsed.details?.currentTitle,
+        school: parsed.details?.school,
+        degree: parsed.details?.degree,
+        yearsExperience: parsed.details?.yearsExperience
+      };
+      state.answerBank = { ...state.answerBank };
+      for (const [key, value] of Object.entries(inferredAnswers)) {
+        if (value && !state.answerBank[key]) state.answerBank[key] = value;
+      }
       if (parsed.roles?.length) {
         state.preferences.roles = mergeResumeRoles(parsed.roles, state.preferences.roles);
       }
@@ -2323,6 +2507,8 @@ async function handleApi(req, res, pathname) {
       const body = await readJson(req);
       const item = state.queue.find(entry => entry.id === queueMatch[1]);
       if (!item) return sendJson(res, 404, { error: "Queue item not found." });
+      const openUrl = safeApplicationUrl(item.applyUrl);
+      if (!openUrl) return sendJson(res, 400, { error: "This draft does not have a valid official application URL." });
 
       const payload = buildAutofillPayload(state, item);
       if (body.dryRun === true) {
@@ -2331,26 +2517,39 @@ async function handleApi(req, res, pathname) {
             id: item.id,
             title: item.title,
             company: item.company,
-            applyUrl: item.applyUrl
+            applyUrl: openUrl
           },
           payload,
           safety: "Dry run only. No browser was opened and no form was filled."
         });
       }
 
-      const result = await openAndAutofillApplication(state, item);
-      item.status = "autofilled";
+      const result = browserAutofillAvailable()
+        ? await openAndAutofillApplication(state, { ...item, applyUrl: openUrl })
+        : {
+            mode: "hosted-assist",
+            openedUrl: openUrl,
+            payload,
+            filled: [],
+            skipped: [],
+            warnings: ["Direct cross-site autofill requires the local desktop app. Prepared answers were copied for pasting."]
+          };
+      item.status = result.mode === "hosted-assist" ? "approved" : "autofilled";
       item.autofilledAt = new Date().toISOString();
       item.audit = [
         ...(item.audit || []),
         {
           at: item.autofilledAt,
-          message: `Opened official application page and autofilled ${result.filled?.length || 0} field(s). Final submit left for manual review.`
+          message: result.mode === "hosted-assist"
+            ? "Opened official application page and prepared a reusable answer package."
+            : `Opened official application page and autofilled ${result.filled?.length || 0} field(s). Final submit left for manual review.`
         }
       ];
-      addActivity(state, `Opened and autofilled application page for ${item.title} at ${item.company}.`);
+      addActivity(state, result.mode === "hosted-assist"
+        ? `Opened application page and prepared answers for ${item.title} at ${item.company}.`
+        : `Opened and autofilled application page for ${item.title} at ${item.company}.`);
       writeState(state);
-      return sendJson(res, 200, { ...publicState(state), autofill: result });
+      return sendJson(res, 200, { ...publicState(state), autofill: result, openUrl: result.mode === "hosted-assist" ? openUrl : "" });
     }
 
     if (queueMatch && req.method === "PATCH") {
