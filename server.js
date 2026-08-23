@@ -1483,8 +1483,8 @@ function upsertJobs(state, scannedJobs, options = {}) {
   const intent = locationIntent(options.targetLocation || "");
 
   for (const scanned of scannedJobs.filter(job => jobMatchesLocationIntent(job, intent))) {
-    const source = state.sources.find(item => item.id === scanned.sourceId);
-    const sourceUrl = /^https?:\/\//i.test(source?.value || "") ? source.value : "";
+    const source = state.sources.find(item => item.id === scanned.sourceId) || scanned;
+    const sourceUrl = sourceCareerUrl(source);
     scanned.url = safeApplicationUrl(scanned.url, sourceUrl);
     scanned.applyUrl = safeApplicationUrl(scanned.applyUrl || scanned.url, sourceUrl);
     const stableId = `job_${hash(`${scanned.sourceId}:${scanned.externalId}:${scanned.url}:${scanned.title}`)}`;
@@ -1574,6 +1574,9 @@ async function performScan(state, options = {}) {
     if (!source.enabled) continue;
     try {
       const jobs = await scanSource(source);
+      for (const job of jobs) {
+        job.sourceValue = source.value || "";
+      }
       scannedJobs.push(...jobs);
       if (!source.transient) {
         source.lastStatus = `Found ${jobs.length} job${jobs.length === 1 ? "" : "s"}`;
@@ -1640,6 +1643,10 @@ function createQueueItem(state, job, options = {}) {
     applyUrl: job.applyUrl || job.url,
     sourceId: job.sourceId,
     sourceName: job.sourceName,
+    sourceType: job.sourceType,
+    sourceValue: job.sourceValue,
+    sourceCountry: job.sourceCountry,
+    sourceProvince: job.sourceProvince,
     score: job.score,
     runId: options.runId || null,
     target: options.target || null,
@@ -1726,13 +1733,58 @@ function safeApplicationUrl(value, base = "") {
   }
 }
 
+function sourceCareerUrl(source) {
+  if (!source) return "";
+  const value = String(source.value || source.sourceValue || "").trim();
+  const directUrl = safeApplicationUrl(value);
+  if (directUrl) return directUrl;
+
+  const slug = encodeURIComponent(value);
+  switch (String(source.type || source.sourceType || "").toLowerCase()) {
+    case "greenhouse":
+      return value ? `https://job-boards.greenhouse.io/${slug}` : "https://www.greenhouse.com/job-board";
+    case "lever":
+      return value ? `https://jobs.lever.co/${slug}` : "https://jobs.lever.co/";
+    case "ashby":
+      return value ? `https://jobs.ashbyhq.com/${slug}` : "https://jobs.ashbyhq.com/";
+    case "linkedin": {
+      const location = String(source.country || source.province || source.sourceCountry || source.sourceProvince || "").trim();
+      const params = new URLSearchParams();
+      if (value) params.set("keywords", value);
+      if (location) params.set("location", location);
+      const query = params.toString();
+      return `https://www.linkedin.com/jobs/search/${query ? `?${query}` : ""}`;
+    }
+    case "remotive":
+      return value
+        ? `https://remotive.com/remote-jobs?search=${encodeURIComponent(value)}`
+        : "https://remotive.com/remote-jobs";
+    default:
+      return "";
+  }
+}
+
 function applicationUrlFor(state, item) {
   const job = item.jobId ? state.jobs.find(candidate => candidate.id === item.jobId) : item;
   const sourceId = item.sourceId || job?.sourceId;
   const source = state.sources.find(candidate => candidate.id === sourceId)
-    || state.sources.find(candidate => candidate.name === (item.sourceName || job?.sourceName));
-  const sourceUrl = safeApplicationUrl(source?.value || "");
-  return safeApplicationUrl(item.applyUrl || job?.applyUrl || job?.url, sourceUrl) || sourceUrl;
+    || state.sources.find(candidate => candidate.name === (item.sourceName || job?.sourceName))
+    || {
+      type: item.sourceType || job?.sourceType,
+      value: item.sourceValue || job?.sourceValue,
+      country: item.sourceCountry || job?.sourceCountry,
+      province: item.sourceProvince || job?.sourceProvince
+    };
+  const sourceUrl = sourceCareerUrl(source);
+  const directUrl = safeApplicationUrl(item.applyUrl || job?.applyUrl || job?.url, sourceUrl);
+  if (directUrl || sourceUrl) return directUrl || sourceUrl;
+
+  const params = new URLSearchParams();
+  const keywords = [item.title || job?.title, item.company || job?.company].filter(Boolean).join(" ");
+  const location = item.location || job?.location || "";
+  if (keywords) params.set("keywords", keywords);
+  if (location) params.set("location", location);
+  return `https://www.linkedin.com/jobs/search/?${params.toString()}`;
 }
 
 function guessName(resume) {

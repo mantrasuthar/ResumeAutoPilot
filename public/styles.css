@@ -1616,6 +1616,7 @@ body {
 
 .app-shell {
   background: transparent;
+  grid-template-rows: 80px minmax(0, 1fr);
 }
 
 .titlebar {
@@ -2052,6 +2053,10 @@ dialog::backdrop {
 }
 
 @media (max-width: 700px) {
+  .app-shell {
+    grid-template-rows: 68px minmax(0, 1fr);
+  }
+
   .consent-screen {
     place-items: stretch;
     padding: 0;
