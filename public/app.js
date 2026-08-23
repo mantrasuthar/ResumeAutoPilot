@@ -329,10 +329,17 @@ function renderJobs() {
           <i data-lucide="plus" size="14"></i>
           Queue
         </button>
-        <a class="secondary link-button" href="${escapeAttr(job.url || job.applyUrl || "#")}" target="_blank" rel="noreferrer">
-          <i data-lucide="external-link" size="14"></i>
-          Open
-        </a>
+        ${job.url || job.applyUrl ? `
+          <a class="secondary link-button" href="${escapeAttr(job.url || job.applyUrl)}" target="_blank" rel="noopener noreferrer">
+            <i data-lucide="external-link" size="14"></i>
+            Open
+          </a>
+        ` : `
+          <button class="secondary" type="button" disabled title="No valid employer link was found">
+            <i data-lucide="unlink" size="14"></i>
+            Link unavailable
+          </button>
+        `}
       </div>
     </article>
   `).join("");
@@ -856,15 +863,24 @@ function openReview(queueId) {
 }
 
 async function approveQueue(queueId) {
+  const applicationWindow = window.open("about:blank", "_blank");
+  if (applicationWindow) {
+    applicationWindow.document.title = "Opening employer career page...";
+    applicationWindow.document.body.textContent = "Opening the official employer career page...";
+  }
   try {
     const data = await api(`/api/queue/${queueId}/approve`, { method: "POST", body: "{}" });
     state.data = data;
     render();
     if (data.openUrl) {
-      window.open(data.openUrl, "_blank", "noreferrer");
+      if (applicationWindow) applicationWindow.location.replace(data.openUrl);
+      else window.open(data.openUrl, "_blank", "noopener,noreferrer");
       showToast("Official application page opened.");
+    } else {
+      applicationWindow?.close();
     }
   } catch (error) {
+    applicationWindow?.close();
     showToast(error.message);
   }
 }

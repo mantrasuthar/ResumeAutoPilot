@@ -1483,6 +1483,10 @@ function upsertJobs(state, scannedJobs, options = {}) {
   const intent = locationIntent(options.targetLocation || "");
 
   for (const scanned of scannedJobs.filter(job => jobMatchesLocationIntent(job, intent))) {
+    const source = state.sources.find(item => item.id === scanned.sourceId);
+    const sourceUrl = /^https?:\/\//i.test(source?.value || "") ? source.value : "";
+    scanned.url = safeApplicationUrl(scanned.url, sourceUrl);
+    scanned.applyUrl = safeApplicationUrl(scanned.applyUrl || scanned.url, sourceUrl);
     const stableId = `job_${hash(`${scanned.sourceId}:${scanned.externalId}:${scanned.url}:${scanned.title}`)}`;
     const match = scoreJob(scanned, state.resume, state.preferences);
     const normalized = {
@@ -1634,6 +1638,7 @@ function createQueueItem(state, job, options = {}) {
     company: job.company,
     location: job.location,
     applyUrl: job.applyUrl || job.url,
+    sourceId: job.sourceId,
     sourceName: job.sourceName,
     score: job.score,
     runId: options.runId || null,
@@ -1710,13 +1715,24 @@ function buildAutofillPayload(state, item) {
   };
 }
 
-function safeApplicationUrl(value) {
+function safeApplicationUrl(value, base = "") {
   try {
-    const parsed = new URL(String(value || ""));
+    const raw = String(value || "").trim();
+    if (!raw || raw === "#" || /^(?:javascript|data|mailto|tel):/i.test(raw)) return "";
+    const parsed = base ? new URL(raw, base) : new URL(raw);
     return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : "";
   } catch {
     return "";
   }
+}
+
+function applicationUrlFor(state, item) {
+  const job = item.jobId ? state.jobs.find(candidate => candidate.id === item.jobId) : item;
+  const sourceId = item.sourceId || job?.sourceId;
+  const source = state.sources.find(candidate => candidate.id === sourceId)
+    || state.sources.find(candidate => candidate.name === (item.sourceName || job?.sourceName));
+  const sourceUrl = safeApplicationUrl(source?.value || "");
+  return safeApplicationUrl(item.applyUrl || job?.applyUrl || job?.url, sourceUrl) || sourceUrl;
 }
 
 function guessName(resume) {
@@ -2169,8 +2185,11 @@ function publicState(state) {
     preferences: state.preferences,
     resume: state.resume,
     sources: state.sources,
-    jobs: state.jobs,
-    queue: state.queue,
+    jobs: state.jobs.map(job => {
+      const openUrl = applicationUrlFor(state, job);
+      return { ...job, url: openUrl, applyUrl: openUrl };
+    }),
+    queue: state.queue.map(item => ({ ...item, applyUrl: applicationUrlFor(state, item) })),
     activity: state.activity,
     answerBank: state.answerBank,
     targetRuns: state.targetRuns || [],
@@ -2507,7 +2526,7 @@ async function handleApi(req, res, pathname) {
       const body = await readJson(req);
       const item = state.queue.find(entry => entry.id === queueMatch[1]);
       if (!item) return sendJson(res, 404, { error: "Queue item not found." });
-      const openUrl = safeApplicationUrl(item.applyUrl);
+      const openUrl = applicationUrlFor(state, item);
       if (!openUrl) return sendJson(res, 400, { error: "This draft does not have a valid official application URL." });
 
       const payload = buildAutofillPayload(state, item);
@@ -2572,6 +2591,9 @@ async function handleApi(req, res, pathname) {
       const state = readState();
       const item = state.queue.find(entry => entry.id === queueMatch[1]);
       if (!item) return sendJson(res, 404, { error: "Queue item not found." });
+      const openUrl = applicationUrlFor(state, item);
+      if (!openUrl) return sendJson(res, 400, { error: "This draft does not have a valid employer career-page URL." });
+      item.applyUrl = openUrl;
       item.status = "approved";
       item.approvedAt = new Date().toISOString();
       item.audit = [
@@ -2580,7 +2602,7 @@ async function handleApi(req, res, pathname) {
       ];
       addActivity(state, `Approved for application: ${item.title} at ${item.company}.`);
       writeState(state);
-      return sendJson(res, 200, { ...publicState(state), openUrl: item.applyUrl });
+      return sendJson(res, 200, { ...publicState(state), openUrl });
     }
 
     return sendJson(res, 404, { error: "API route not found." });
