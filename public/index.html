@@ -115,6 +115,9 @@
         <button class="rail-button" data-target="resume" title="Resume">
           <i data-lucide="file-text"></i>
         </button>
+        <button class="rail-button" data-target="resume-builder" title="Resume Builder">
+          <i data-lucide="file-pen-line"></i>
+        </button>
         <button class="rail-button" data-target="sources" title="Sources">
           <i data-lucide="link"></i>
         </button>
@@ -321,6 +324,178 @@
               </select>
             </div>
             <div id="jobsList" class="job-list empty-state">No scanned jobs yet.</div>
+          </section>
+        </section>
+
+        <section class="workspace hidden" id="resume-builder">
+          <section class="resume-builder-shell">
+            <div class="builder-toolbar">
+              <div class="builder-score" aria-live="polite">
+                <div>
+                  <strong id="builderScore">0%</strong>
+                  <span>ATS readiness</span>
+                </div>
+                <progress id="builderScoreProgress" max="100" value="0">0%</progress>
+              </div>
+              <label class="builder-density">
+                Layout
+                <select id="builderDensity">
+                  <option value="standard">Standard</option>
+                  <option value="compact">Compact</option>
+                </select>
+              </label>
+              <div class="builder-actions">
+                <button class="secondary" id="copyResumeText" type="button" title="Copy resume text">
+                  <i data-lucide="copy" size="16"></i>
+                  Copy
+                </button>
+                <button class="secondary" id="downloadResumeText" type="button" title="Download plain text resume">
+                  <i data-lucide="file-down" size="16"></i>
+                  TXT
+                </button>
+                <button class="secondary" id="downloadResumeWord" type="button" title="Download Word-compatible resume">
+                  <i data-lucide="file-type-2" size="16"></i>
+                  Word
+                </button>
+                <button class="secondary" id="printResume" type="button" title="Print or save as PDF">
+                  <i data-lucide="printer" size="16"></i>
+                  PDF
+                </button>
+                <button class="primary" id="saveResumeBuilder" type="button">
+                  <i data-lucide="save" size="16"></i>
+                  Save
+                </button>
+              </div>
+            </div>
+
+            <div class="builder-layout">
+              <form id="resumeBuilderForm" class="builder-editor">
+                <section class="builder-form-section">
+                  <div class="builder-section-head">
+                    <div>
+                      <span class="eyebrow">Contact</span>
+                      <h3>Personal details</h3>
+                    </div>
+                  </div>
+                  <div class="builder-field-grid">
+                    <label>Full name<input id="builderFullName" autocomplete="name" required></label>
+                    <label>Professional headline<input id="builderHeadline" placeholder="Software Engineer"></label>
+                    <label>Email<input id="builderEmail" type="email" autocomplete="email"></label>
+                    <label>Phone<input id="builderPhone" type="tel" autocomplete="tel"></label>
+                    <label>City and region<input id="builderLocation" autocomplete="address-level2"></label>
+                    <label>LinkedIn<input id="builderLinkedin" type="url" placeholder="https://linkedin.com/in/..."></label>
+                    <label class="wide-field">Portfolio or GitHub<input id="builderPortfolio" type="url" placeholder="https://..."></label>
+                  </div>
+                </section>
+
+                <section class="builder-form-section">
+                  <div class="builder-section-head">
+                    <div>
+                      <span class="eyebrow">Profile</span>
+                      <h3>Professional summary</h3>
+                    </div>
+                    <span id="summaryCount" class="field-counter">0 characters</span>
+                  </div>
+                  <textarea id="builderSummary" rows="5" maxlength="1200" placeholder="Summarize your experience, strongest specialties, and the value you deliver."></textarea>
+                  <p class="builder-hint">Aim for 50-90 words. Keep it specific and avoid first-person pronouns.</p>
+                </section>
+
+                <section class="builder-form-section">
+                  <div class="builder-section-head">
+                    <div>
+                      <span class="eyebrow">Capabilities</span>
+                      <h3>Skills</h3>
+                    </div>
+                  </div>
+                  <textarea id="builderSkills" rows="4" placeholder="JavaScript, React, Node.js, SQL"></textarea>
+                  <p class="builder-hint">Use comma-separated, truthful hard skills. The preview keeps them machine-readable.</p>
+                </section>
+
+                <section class="builder-form-section">
+                  <div class="builder-section-head">
+                    <div>
+                      <span class="eyebrow">Career</span>
+                      <h3>Experience</h3>
+                    </div>
+                    <button class="secondary compact-action" id="addExperience" type="button">
+                      <i data-lucide="plus" size="15"></i>
+                      Add role
+                    </button>
+                  </div>
+                  <div id="experienceEditor" class="builder-repeater"></div>
+                </section>
+
+                <section class="builder-form-section">
+                  <div class="builder-section-head">
+                    <div>
+                      <span class="eyebrow">Learning</span>
+                      <h3>Education</h3>
+                    </div>
+                    <button class="secondary compact-action" id="addEducation" type="button">
+                      <i data-lucide="plus" size="15"></i>
+                      Add education
+                    </button>
+                  </div>
+                  <div id="educationEditor" class="builder-repeater"></div>
+                </section>
+
+                <section class="builder-form-section">
+                  <div class="builder-section-head">
+                    <div>
+                      <span class="eyebrow">Proof</span>
+                      <h3>Projects</h3>
+                    </div>
+                    <button class="secondary compact-action" id="addProject" type="button">
+                      <i data-lucide="plus" size="15"></i>
+                      Add project
+                    </button>
+                  </div>
+                  <div id="projectsEditor" class="builder-repeater"></div>
+                </section>
+
+                <section class="builder-form-section">
+                  <div class="builder-section-head">
+                    <div>
+                      <span class="eyebrow">Credentials</span>
+                      <h3>Certifications</h3>
+                    </div>
+                    <button class="secondary compact-action" id="addCertification" type="button">
+                      <i data-lucide="plus" size="15"></i>
+                      Add certification
+                    </button>
+                  </div>
+                  <div id="certificationsEditor" class="builder-repeater"></div>
+                </section>
+
+                <section class="builder-form-section builder-tailor-section">
+                  <div class="builder-section-head">
+                    <div>
+                      <span class="eyebrow">Tailor</span>
+                      <h3>Compare with a job description</h3>
+                    </div>
+                  </div>
+                  <textarea id="builderJobDescription" rows="6" placeholder="Paste a job description to check keyword coverage. This text is not included in your resume."></textarea>
+                  <div id="keywordAnalysis" class="keyword-analysis">Paste a job description to see relevant missing keywords.</div>
+                </section>
+              </form>
+
+              <aside class="builder-preview-pane" aria-label="Resume preview">
+                <div class="preview-label">
+                  <span>Live preview</span>
+                  <small>Single column, standard headings, selectable text</small>
+                </div>
+                <article id="resumePreview" class="resume-paper"></article>
+                <section class="ats-checklist">
+                  <div class="builder-section-head">
+                    <div>
+                      <span class="eyebrow">Quality check</span>
+                      <h3>Before you export</h3>
+                    </div>
+                  </div>
+                  <div id="builderChecklist" class="checklist-items"></div>
+                </section>
+              </aside>
+            </div>
           </section>
         </section>
 

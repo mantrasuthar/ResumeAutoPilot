@@ -6,7 +6,10 @@ const state = {
   forceNextTargetRole: false,
   uploadFromWelcome: false,
   autoSearching: false,
-  lastAutoMatchCount: null
+  lastAutoMatchCount: null,
+  builderDraft: null,
+  builderLoadedVersion: "",
+  builderDirty: false
 };
 
 const CONSENT_VERSION = "2026-08-22";
@@ -83,6 +86,37 @@ const els = {
   schoolInput: document.querySelector("#schoolInput"),
   degreeInput: document.querySelector("#degreeInput"),
   yearsExperienceInput: document.querySelector("#yearsExperienceInput"),
+  resumeBuilderForm: document.querySelector("#resumeBuilderForm"),
+  builderFullName: document.querySelector("#builderFullName"),
+  builderHeadline: document.querySelector("#builderHeadline"),
+  builderEmail: document.querySelector("#builderEmail"),
+  builderPhone: document.querySelector("#builderPhone"),
+  builderLocation: document.querySelector("#builderLocation"),
+  builderLinkedin: document.querySelector("#builderLinkedin"),
+  builderPortfolio: document.querySelector("#builderPortfolio"),
+  builderSummary: document.querySelector("#builderSummary"),
+  builderSkills: document.querySelector("#builderSkills"),
+  builderJobDescription: document.querySelector("#builderJobDescription"),
+  builderDensity: document.querySelector("#builderDensity"),
+  experienceEditor: document.querySelector("#experienceEditor"),
+  educationEditor: document.querySelector("#educationEditor"),
+  projectsEditor: document.querySelector("#projectsEditor"),
+  certificationsEditor: document.querySelector("#certificationsEditor"),
+  resumePreview: document.querySelector("#resumePreview"),
+  builderChecklist: document.querySelector("#builderChecklist"),
+  builderScore: document.querySelector("#builderScore"),
+  builderScoreProgress: document.querySelector("#builderScoreProgress"),
+  summaryCount: document.querySelector("#summaryCount"),
+  keywordAnalysis: document.querySelector("#keywordAnalysis"),
+  saveResumeBuilder: document.querySelector("#saveResumeBuilder"),
+  copyResumeText: document.querySelector("#copyResumeText"),
+  downloadResumeText: document.querySelector("#downloadResumeText"),
+  downloadResumeWord: document.querySelector("#downloadResumeWord"),
+  printResume: document.querySelector("#printResume"),
+  addExperience: document.querySelector("#addExperience"),
+  addEducation: document.querySelector("#addEducation"),
+  addProject: document.querySelector("#addProject"),
+  addCertification: document.querySelector("#addCertification"),
   reviewDialog: document.querySelector("#reviewDialog"),
   dialogTitle: document.querySelector("#dialogTitle"),
   dialogMeta: document.querySelector("#dialogMeta"),
@@ -184,6 +218,7 @@ function render() {
   renderProfile();
   renderActivity();
   renderAnswers();
+  renderResumeBuilder();
   if (window.lucide) lucide.createIcons();
 }
 
@@ -534,6 +569,416 @@ function renderAnswers() {
   els.yearsExperienceInput.value = answers.yearsExperience || "";
 }
 
+function emptyResumeBuilder() {
+  return {
+    contact: { fullName: "", email: "", phone: "", location: "", linkedin: "", portfolio: "" },
+    headline: "",
+    summary: "",
+    skills: [],
+    experience: [],
+    education: [],
+    projects: [],
+    certifications: [],
+    targetJobDescription: "",
+    density: "standard",
+    updatedAt: null
+  };
+}
+
+function builderId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function cloneBuilder(value) {
+  return JSON.parse(JSON.stringify(value || emptyResumeBuilder()));
+}
+
+function renderResumeBuilder() {
+  const serverDraft = state.data.resumeBuilder || emptyResumeBuilder();
+  const version = serverDraft.updatedAt || "empty";
+  if (!state.builderDraft || (state.builderLoadedVersion !== version && !state.builderDirty)) {
+    state.builderDraft = cloneBuilder(serverDraft);
+    state.builderLoadedVersion = version;
+    state.builderDirty = false;
+    populateBuilderForm();
+  }
+  renderBuilderOutput();
+}
+
+function populateBuilderForm() {
+  const draft = state.builderDraft || emptyResumeBuilder();
+  const contact = draft.contact || {};
+  els.builderFullName.value = contact.fullName || "";
+  els.builderHeadline.value = draft.headline || "";
+  els.builderEmail.value = contact.email || "";
+  els.builderPhone.value = contact.phone || "";
+  els.builderLocation.value = contact.location || "";
+  els.builderLinkedin.value = contact.linkedin || "";
+  els.builderPortfolio.value = contact.portfolio || "";
+  els.builderSummary.value = draft.summary || "";
+  els.builderSkills.value = (draft.skills || []).join(", ");
+  els.builderJobDescription.value = draft.targetJobDescription || "";
+  els.builderDensity.value = draft.density || "standard";
+  renderBuilderRepeaters();
+}
+
+function repeaterActions(type, id, index, length) {
+  return `
+    <div class="repeater-actions">
+      <button class="icon-button move-builder-item" type="button" data-type="${type}" data-id="${id}" data-direction="-1" title="Move up" ${index === 0 ? "disabled" : ""}><i data-lucide="arrow-up" size="15"></i></button>
+      <button class="icon-button move-builder-item" type="button" data-type="${type}" data-id="${id}" data-direction="1" title="Move down" ${index === length - 1 ? "disabled" : ""}><i data-lucide="arrow-down" size="15"></i></button>
+      <button class="icon-button remove-builder-item" type="button" data-type="${type}" data-id="${id}" title="Remove"><i data-lucide="trash-2" size="15"></i></button>
+    </div>`;
+}
+
+function renderBuilderRepeaters() {
+  const draft = state.builderDraft;
+  els.experienceEditor.innerHTML = draft.experience.length ? draft.experience.map((item, index) => `
+    <article class="repeater-item" data-type="experience" data-id="${escapeAttr(item.id)}">
+      <div class="repeater-heading"><strong>Role ${index + 1}</strong>${repeaterActions("experience", escapeAttr(item.id), index, draft.experience.length)}</div>
+      <div class="builder-field-grid">
+        <label>Job title<input data-field="title" value="${escapeAttr(item.title)}"></label>
+        <label>Company<input data-field="company" value="${escapeAttr(item.company)}"></label>
+        <label>Location<input data-field="location" value="${escapeAttr(item.location)}"></label>
+        <label>Start date<input data-field="startDate" value="${escapeAttr(item.startDate)}" placeholder="Jan 2022"></label>
+        <label>End date<input data-field="endDate" value="${escapeAttr(item.endDate)}" placeholder="Present" ${item.current ? "disabled" : ""}></label>
+        <label class="builder-check"><input data-field="current" type="checkbox" ${item.current ? "checked" : ""}><span>Current role</span></label>
+        <label class="wide-field">Achievement bullets<textarea data-field="bullets" rows="5" placeholder="Led...&#10;Improved...&#10;Delivered...">${escapeHtml((item.bullets || []).join("\n"))}</textarea></label>
+      </div>
+      <p class="builder-hint">One accomplishment per line. Start with an action verb and include scale or results when accurate.</p>
+    </article>`).join("") : '<div class="builder-empty">Add your most recent role first.</div>';
+
+  els.educationEditor.innerHTML = draft.education.length ? draft.education.map((item, index) => `
+    <article class="repeater-item" data-type="education" data-id="${escapeAttr(item.id)}">
+      <div class="repeater-heading"><strong>Education ${index + 1}</strong>${repeaterActions("education", escapeAttr(item.id), index, draft.education.length)}</div>
+      <div class="builder-field-grid">
+        <label>School<input data-field="school" value="${escapeAttr(item.school)}"></label>
+        <label>Degree and field<input data-field="degree" value="${escapeAttr(item.degree)}"></label>
+        <label>Location<input data-field="location" value="${escapeAttr(item.location)}"></label>
+        <label>Graduation date<input data-field="graduationDate" value="${escapeAttr(item.graduationDate)}" placeholder="May 2024"></label>
+        <label class="wide-field">Honors or relevant details<textarea data-field="details" rows="3">${escapeHtml((item.details || []).join("\n"))}</textarea></label>
+      </div>
+    </article>`).join("") : '<div class="builder-empty">Add education when it supports your target role.</div>';
+
+  els.projectsEditor.innerHTML = draft.projects.length ? draft.projects.map((item, index) => `
+    <article class="repeater-item" data-type="projects" data-id="${escapeAttr(item.id)}">
+      <div class="repeater-heading"><strong>Project ${index + 1}</strong>${repeaterActions("projects", escapeAttr(item.id), index, draft.projects.length)}</div>
+      <div class="builder-field-grid">
+        <label>Project name<input data-field="name" value="${escapeAttr(item.name)}"></label>
+        <label>Project link<input data-field="link" type="url" value="${escapeAttr(item.link)}"></label>
+        <label class="wide-field">Technologies<input data-field="technologies" value="${escapeAttr(item.technologies)}"></label>
+        <label class="wide-field">Achievement bullets<textarea data-field="bullets" rows="4">${escapeHtml((item.bullets || []).join("\n"))}</textarea></label>
+      </div>
+    </article>`).join("") : '<div class="builder-empty">Projects are useful for showing relevant work beyond job titles.</div>';
+
+  els.certificationsEditor.innerHTML = draft.certifications.length ? draft.certifications.map((item, index) => `
+    <article class="repeater-item" data-type="certifications" data-id="${escapeAttr(item.id)}">
+      <div class="repeater-heading"><strong>Certification ${index + 1}</strong>${repeaterActions("certifications", escapeAttr(item.id), index, draft.certifications.length)}</div>
+      <div class="builder-field-grid builder-cert-grid">
+        <label>Name<input data-field="name" value="${escapeAttr(item.name)}"></label>
+        <label>Issuer<input data-field="issuer" value="${escapeAttr(item.issuer)}"></label>
+        <label>Date<input data-field="date" value="${escapeAttr(item.date)}"></label>
+      </div>
+    </article>`).join("") : '<div class="builder-empty">Add only current, relevant credentials.</div>';
+  if (window.lucide) lucide.createIcons();
+}
+
+function splitBuilderLines(value) {
+  return String(value || "").split(/\n/).map(item => item.trim().replace(/^[•*-]\s*/, "")).filter(Boolean);
+}
+
+function collectBuilderRepeater(container, type) {
+  return [...container.querySelectorAll(`.repeater-item[data-type="${type}"]`)].map(card => {
+    const value = field => card.querySelector(`[data-field="${field}"]`)?.value.trim() || "";
+    const base = { id: card.dataset.id };
+    if (type === "experience") return { ...base, title: value("title"), company: value("company"), location: value("location"), startDate: value("startDate"), endDate: value("endDate"), current: Boolean(card.querySelector('[data-field="current"]')?.checked), bullets: splitBuilderLines(value("bullets")) };
+    if (type === "education") return { ...base, school: value("school"), degree: value("degree"), location: value("location"), graduationDate: value("graduationDate"), details: splitBuilderLines(value("details")) };
+    if (type === "projects") return { ...base, name: value("name"), link: value("link"), technologies: value("technologies"), bullets: splitBuilderLines(value("bullets")) };
+    return { ...base, name: value("name"), issuer: value("issuer"), date: value("date") };
+  });
+}
+
+function syncBuilderFromForm() {
+  if (!state.builderDraft) state.builderDraft = emptyResumeBuilder();
+  state.builderDraft.contact = {
+    fullName: els.builderFullName.value.trim(),
+    email: els.builderEmail.value.trim(),
+    phone: els.builderPhone.value.trim(),
+    location: els.builderLocation.value.trim(),
+    linkedin: els.builderLinkedin.value.trim(),
+    portfolio: els.builderPortfolio.value.trim()
+  };
+  state.builderDraft.headline = els.builderHeadline.value.trim();
+  state.builderDraft.summary = els.builderSummary.value.trim();
+  state.builderDraft.skills = String(els.builderSkills.value).split(/,|\n/).map(item => item.trim()).filter(Boolean);
+  state.builderDraft.experience = collectBuilderRepeater(els.experienceEditor, "experience");
+  state.builderDraft.education = collectBuilderRepeater(els.educationEditor, "education");
+  state.builderDraft.projects = collectBuilderRepeater(els.projectsEditor, "projects");
+  state.builderDraft.certifications = collectBuilderRepeater(els.certificationsEditor, "certifications");
+  state.builderDraft.targetJobDescription = els.builderJobDescription.value.trim();
+  state.builderDraft.density = els.builderDensity.value;
+  state.builderDirty = true;
+  renderBuilderOutput();
+}
+
+function builderDateRange(item) {
+  return [item.startDate, item.current ? "Present" : item.endDate].filter(Boolean).join(" - ");
+}
+
+function resumeSection(title, content) {
+  return content ? `<section class="resume-section"><h2>${escapeHtml(title)}</h2>${content}</section>` : "";
+}
+
+function resumeContentHtml(draft) {
+  const contact = draft.contact || {};
+  const contactLine = [contact.email, contact.phone, contact.location, contact.linkedin, contact.portfolio].filter(Boolean);
+  const experience = (draft.experience || []).filter(item => item.title || item.company || item.bullets?.length).map(item => `
+    <div class="resume-entry">
+      <div class="resume-entry-head"><strong>${escapeHtml(item.title || "Role")}${item.company ? `, ${escapeHtml(item.company)}` : ""}</strong><span>${escapeHtml(builderDateRange(item))}</span></div>
+      ${item.location ? `<div class="resume-entry-meta">${escapeHtml(item.location)}</div>` : ""}
+      ${(item.bullets || []).length ? `<ul>${item.bullets.map(bullet => `<li>${escapeHtml(bullet)}</li>`).join("")}</ul>` : ""}
+    </div>`).join("");
+  const education = (draft.education || []).filter(item => item.school || item.degree).map(item => `
+    <div class="resume-entry">
+      <div class="resume-entry-head"><strong>${escapeHtml(item.degree || item.school)}${item.degree && item.school ? `, ${escapeHtml(item.school)}` : ""}</strong><span>${escapeHtml(item.graduationDate)}</span></div>
+      ${item.location ? `<div class="resume-entry-meta">${escapeHtml(item.location)}</div>` : ""}
+      ${(item.details || []).length ? `<ul>${item.details.map(detail => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>` : ""}
+    </div>`).join("");
+  const projects = (draft.projects || []).filter(item => item.name || item.bullets?.length).map(item => `
+    <div class="resume-entry">
+      <div class="resume-entry-head"><strong>${escapeHtml(item.name || "Project")}</strong><span>${escapeHtml(item.link)}</span></div>
+      ${item.technologies ? `<div class="resume-entry-meta">${escapeHtml(item.technologies)}</div>` : ""}
+      ${(item.bullets || []).length ? `<ul>${item.bullets.map(bullet => `<li>${escapeHtml(bullet)}</li>`).join("")}</ul>` : ""}
+    </div>`).join("");
+  const certifications = (draft.certifications || []).filter(item => item.name).map(item => `<div class="resume-inline-entry"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml([item.issuer, item.date].filter(Boolean).join(" | "))}</span></div>`).join("");
+  return `
+    <header class="resume-header">
+      <h1>${escapeHtml(contact.fullName || "Your Name")}</h1>
+      ${draft.headline ? `<p class="resume-headline">${escapeHtml(draft.headline)}</p>` : ""}
+      ${contactLine.length ? `<p class="resume-contact">${contactLine.map(escapeHtml).join(" | ")}</p>` : ""}
+    </header>
+    ${resumeSection("Professional Summary", draft.summary ? `<p>${escapeHtml(draft.summary)}</p>` : "")}
+    ${resumeSection("Skills", draft.skills?.length ? `<p>${draft.skills.map(escapeHtml).join(" | ")}</p>` : "")}
+    ${resumeSection("Experience", experience)}
+    ${resumeSection("Education", education)}
+    ${resumeSection("Projects", projects)}
+    ${resumeSection("Certifications", certifications)}`;
+}
+
+function resumePlainText(draft) {
+  const lines = [];
+  const contact = draft.contact || {};
+  lines.push((contact.fullName || "YOUR NAME").toUpperCase());
+  if (draft.headline) lines.push(draft.headline);
+  lines.push([contact.email, contact.phone, contact.location, contact.linkedin, contact.portfolio].filter(Boolean).join(" | "));
+  const section = (title, content) => { if (content.length) lines.push("", title.toUpperCase(), ...content); };
+  section("Professional Summary", draft.summary ? [draft.summary] : []);
+  section("Skills", draft.skills?.length ? [draft.skills.join(" | ")] : []);
+  section("Experience", (draft.experience || []).filter(item => item.title || item.company).flatMap(item => [
+    [item.title, item.company].filter(Boolean).join(", ") + (builderDateRange(item) ? ` | ${builderDateRange(item)}` : ""),
+    item.location || "",
+    ...(item.bullets || []).map(bullet => `- ${bullet}`)
+  ].filter(Boolean)));
+  section("Education", (draft.education || []).filter(item => item.school || item.degree).flatMap(item => [
+    [item.degree, item.school].filter(Boolean).join(", ") + (item.graduationDate ? ` | ${item.graduationDate}` : ""),
+    ...(item.details || []).map(detail => `- ${detail}`)
+  ]));
+  section("Projects", (draft.projects || []).filter(item => item.name).flatMap(item => [item.name + (item.technologies ? ` | ${item.technologies}` : ""), ...(item.bullets || []).map(bullet => `- ${bullet}`)]));
+  section("Certifications", (draft.certifications || []).filter(item => item.name).map(item => [item.name, item.issuer, item.date].filter(Boolean).join(" | ")));
+  return lines.filter((line, index) => line || lines[index - 1]).join("\n").trim();
+}
+
+function analyzeBuilder(draft) {
+  const contact = draft.contact || {};
+  const bullets = [...(draft.experience || []), ...(draft.projects || [])].flatMap(item => item.bullets || []);
+  const actionVerb = /^(achieved|analyzed|automated|built|created|delivered|designed|developed|drove|implemented|improved|increased|launched|led|managed|optimized|reduced|resolved|scaled|streamlined|supported)\b/i;
+  const completeRoles = (draft.experience || []).filter(item => item.title && item.company);
+  const hasDates = completeRoles.some(item => item.startDate && (item.current || item.endDate));
+  const actionCount = bullets.filter(bullet => actionVerb.test(bullet)).length;
+  const metricCount = bullets.filter(bullet => /(?:\b\d+[+x]?\b|\d+%|\$[\d,.]+)/i.test(bullet)).length;
+  const summaryWords = draft.summary.trim().split(/\s+/).filter(Boolean).length;
+  let score = 0;
+  score += contact.fullName ? 4 : 0;
+  score += /@/.test(contact.email) ? 4 : 0;
+  score += contact.phone ? 3 : 0;
+  score += contact.location ? 4 : 0;
+  score += draft.headline ? 8 : 0;
+  score += summaryWords >= 40 && summaryWords <= 100 ? 15 : draft.summary ? 7 : 0;
+  score += Math.min(12, (draft.skills || []).length * 2);
+  score += completeRoles.length ? 10 : 0;
+  score += hasDates ? 5 : 0;
+  score += bullets.length >= 3 ? 10 : bullets.length * 3;
+  score += bullets.length && actionCount / bullets.length >= 0.6 ? 7 : 0;
+  score += metricCount ? 8 : 0;
+  score += (draft.education || []).some(item => item.school || item.degree) ? 5 : 0;
+  score += contact.linkedin || contact.portfolio || draft.projects?.length ? 5 : 0;
+  const checks = [
+    { ok: Boolean(contact.fullName && contact.email && contact.phone && contact.location), label: "Complete contact details" },
+    { ok: summaryWords >= 40 && summaryWords <= 100, label: "Focused 40-100 word summary" },
+    { ok: (draft.skills || []).length >= 6, label: "At least six relevant hard skills" },
+    { ok: Boolean(completeRoles.length && hasDates), label: "Experience includes titles, companies, and dates" },
+    { ok: bullets.length >= 3 && actionCount / Math.max(1, bullets.length) >= 0.6, label: "Achievement bullets begin with action verbs" },
+    { ok: metricCount > 0, label: "At least one truthful measurable result" },
+    { ok: !/[\u2600-\u27BF]/.test(resumePlainText(draft)), label: "No icons or decorative symbols in resume text" }
+  ];
+  return { score: Math.min(100, score), checks };
+}
+
+function renderKeywordAnalysis(draft) {
+  const description = draft.targetJobDescription || "";
+  if (!description.trim()) {
+    els.keywordAnalysis.textContent = "Paste a job description to see relevant missing keywords.";
+    return;
+  }
+  const stop = new Set("about after also and are been being can company could from have into its job more most our role seeking should than that the their them they this through using was were what when where which will with work would years your required preferred qualifications responsibilities experience candidate team strong ability skills".split(" "));
+  const counts = new Map();
+  (description.toLowerCase().match(/[a-z][a-z0-9+#.-]{2,}/g) || []).forEach(word => {
+    const clean = word.replace(/^[.-]+|[.-]+$/g, "");
+    if (clean.length < 4 || stop.has(clean)) return;
+    counts.set(clean, (counts.get(clean) || 0) + 1);
+  });
+  const resumeText = resumePlainText(draft).toLowerCase();
+  const missing = [...counts.entries()].filter(([word]) => !resumeText.includes(word)).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 12).map(([word]) => word);
+  els.keywordAnalysis.innerHTML = missing.length
+    ? `<strong>Keywords to review</strong><p>Only add these when they truthfully match your experience.</p><div>${missing.map(word => `<span>${escapeHtml(word)}</span>`).join("")}</div>`
+    : "Your resume already covers the strongest repeated terms detected in this job description.";
+}
+
+function renderBuilderOutput() {
+  if (!state.builderDraft) return;
+  const analysis = analyzeBuilder(state.builderDraft);
+  els.builderScore.textContent = `${analysis.score}%`;
+  els.builderScoreProgress.value = analysis.score;
+  els.builderScoreProgress.textContent = `${analysis.score}%`;
+  els.builderScoreProgress.setAttribute("aria-valuetext", `${analysis.score}% ATS readiness`);
+  els.summaryCount.textContent = `${state.builderDraft.summary.length} characters`;
+  els.resumePreview.classList.toggle("compact", state.builderDraft.density === "compact");
+  els.resumePreview.innerHTML = resumeContentHtml(state.builderDraft);
+  els.builderChecklist.innerHTML = analysis.checks.map(check => `<div class="checklist-item ${check.ok ? "complete" : ""}"><i data-lucide="${check.ok ? "check-circle-2" : "circle"}" size="16"></i><span>${escapeHtml(check.label)}</span></div>`).join("");
+  renderKeywordAnalysis(state.builderDraft);
+  if (window.lucide) lucide.createIcons();
+}
+
+function addBuilderItem(type) {
+  syncBuilderFromForm();
+  const templates = {
+    experience: { id: builderId("exp"), title: "", company: "", location: "", startDate: "", endDate: "", current: false, bullets: [] },
+    education: { id: builderId("edu"), school: "", degree: "", location: "", graduationDate: "", details: [] },
+    projects: { id: builderId("project"), name: "", link: "", technologies: "", bullets: [] },
+    certifications: { id: builderId("cert"), name: "", issuer: "", date: "" }
+  };
+  state.builderDraft[type].push(templates[type]);
+  state.builderDirty = true;
+  renderBuilderRepeaters();
+  renderBuilderOutput();
+  document.querySelector(`.repeater-item[data-id="${templates[type].id}"] input`)?.focus();
+}
+
+function changeBuilderItem(type, itemId, direction) {
+  syncBuilderFromForm();
+  const items = state.builderDraft[type] || [];
+  const index = items.findIndex(item => item.id === itemId);
+  const nextIndex = index + Number(direction);
+  if (index < 0 || nextIndex < 0 || nextIndex >= items.length) return;
+  [items[index], items[nextIndex]] = [items[nextIndex], items[index]];
+  renderBuilderRepeaters();
+  renderBuilderOutput();
+}
+
+function removeBuilderItem(type, itemId) {
+  syncBuilderFromForm();
+  state.builderDraft[type] = (state.builderDraft[type] || []).filter(item => item.id !== itemId);
+  state.builderDirty = true;
+  renderBuilderRepeaters();
+  renderBuilderOutput();
+}
+
+async function saveBuilderDraft() {
+  syncBuilderFromForm();
+  const done = setBusy(els.saveResumeBuilder, "Saving...");
+  try {
+    state.data = await api("/api/resume-builder", { method: "PATCH", body: JSON.stringify(state.builderDraft) });
+    state.builderDraft = cloneBuilder(state.data.resumeBuilder);
+    state.builderLoadedVersion = state.data.resumeBuilder.updatedAt || "empty";
+    state.builderDirty = false;
+    showToast("Resume Builder draft saved.");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    done();
+  }
+}
+
+function resumeExportName(draft, extension) {
+  const name = (draft.contact?.fullName || "resume").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `${name || "resume"}.${extension}`;
+}
+
+function downloadBuilderFile(content, type, filename) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function resumeDocumentHtml(draft) {
+  const compact = draft.density === "compact";
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(draft.contact?.fullName || "Resume")}</title><style>
+    @page { size: Letter; margin: ${compact ? "0.45in" : "0.6in"}; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #111827; background: #fff; font: ${compact ? "9.5pt/1.3" : "10.5pt/1.42"} Arial, Helvetica, sans-serif; }
+    article { max-width: 8.5in; margin: 0 auto; }
+    h1 { margin: 0; font-size: ${compact ? "21pt" : "24pt"}; letter-spacing: 0; }
+    h2 { margin: ${compact ? "10px" : "14px"} 0 5px; padding-bottom: 3px; border-bottom: 1px solid #111827; font-size: 10.5pt; letter-spacing: 0; text-transform: uppercase; }
+    p { margin: 0 0 5px; }
+    ul { margin: 4px 0 7px 18px; padding: 0; }
+    li { margin: 0 0 3px; }
+    .resume-header { text-align: center; }
+    .resume-headline { margin-top: 3px; font-weight: 700; }
+    .resume-contact { margin-top: 5px; font-size: 9pt; overflow-wrap: anywhere; }
+    .resume-entry { margin-bottom: ${compact ? "6px" : "9px"}; break-inside: avoid; }
+    .resume-entry-head, .resume-inline-entry { display: flex; justify-content: space-between; gap: 14px; }
+    .resume-entry-head span, .resume-inline-entry span { flex: 0 0 auto; }
+    .resume-entry-meta { margin-top: 2px; color: #374151; font-style: italic; }
+  </style></head><body><article>${resumeContentHtml(draft)}</article></body></html>`;
+}
+
+function printBuilderResume() {
+  syncBuilderFromForm();
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    showToast("Allow pop-ups to print or save this resume as PDF.");
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(resumeDocumentHtml(state.builderDraft));
+  printWindow.document.close();
+  window.setTimeout(() => {
+    printWindow.focus();
+    printWindow.print();
+  }, 250);
+}
+
+function downloadBuilderText() {
+  syncBuilderFromForm();
+  downloadBuilderFile(resumePlainText(state.builderDraft), "text/plain;charset=utf-8", resumeExportName(state.builderDraft, "txt"));
+}
+
+function downloadBuilderWord() {
+  syncBuilderFromForm();
+  downloadBuilderFile(resumeDocumentHtml(state.builderDraft), "application/msword", resumeExportName(state.builderDraft, "doc"));
+}
+
+async function copyBuilderResume() {
+  syncBuilderFromForm();
+  const copied = await copyText(resumePlainText(state.builderDraft));
+  showToast(copied ? "Resume text copied." : "Could not copy resume text.");
+}
+
 function tags(items, flavor) {
   return (items || []).slice(0, 6).map(item => `<span class="pill ${flavor}">${escapeHtml(item)}</span>`).join("");
 }
@@ -582,12 +1027,13 @@ function showToast(message) {
 }
 
 function setBusy(button, busyText) {
-  const original = button.textContent;
+  const original = button.innerHTML;
   button.disabled = true;
   button.textContent = busyText;
   return () => {
     button.disabled = false;
-    button.textContent = original;
+    button.innerHTML = original;
+    if (window.lucide) lucide.createIcons();
   };
 }
 
@@ -620,6 +1066,9 @@ async function uploadResume(event) {
     const form = new FormData();
     form.append("resume", els.resumeInput.files[0]);
     state.data = await api("/api/upload-resume", { method: "POST", body: form });
+    state.builderDraft = null;
+    state.builderLoadedVersion = "";
+    state.builderDirty = false;
     state.forceNextTargetRole = true;
     const role = state.data.resume?.roles?.[0] || "";
     els.targetRole.value = role;
@@ -671,8 +1120,10 @@ async function savePreferences() {
         reviewBeforeSubmit: els.reviewToggle.checked
       })
     });
+    els.targetLocation.value = state.data.preferences.locations[0] || "";
+    els.jobFilter.value = "matched";
     render();
-    showToast("Preferences saved.");
+    showToast("Preferences saved. Existing jobs were updated to the selected region.");
   } catch (error) {
     showToast(error.message);
   } finally {
@@ -973,11 +1424,13 @@ function setView(view) {
   const workspaceView = view === "resume" ? "dashboard" : view;
   layout?.classList.toggle("show-mobile-resume", isMobileResume);
   layout?.classList.toggle("show-resume-panel", view === "resume");
+  layout?.classList.toggle("builder-mode", view === "resume-builder");
   document.querySelectorAll(".workspace").forEach(panel => panel.classList.toggle("hidden", panel.id !== workspaceView));
   document.querySelectorAll(".rail-button").forEach(button => button.classList.toggle("active", button.dataset.target === view));
   const titles = {
     dashboard: ["Find your next role", "Upload your resume, choose a role, and review the matches."],
     resume: ["Your resume", "Update your file and matching preferences."],
+    "resume-builder": ["Resume Builder", "Build a clean, single-column resume and check its ATS readiness."],
     sources: ["Job sources", "Add a company careers page when you need it."],
     queue: ["Your applications", "Review each draft before opening the official application page."],
     answers: ["Saved answers", "Optional details that speed up application drafts."]
@@ -1026,6 +1479,34 @@ function bindEvents() {
 
   els.savePreferences.addEventListener("click", savePreferences);
   els.answersForm.addEventListener("submit", saveAnswers);
+  els.resumeBuilderForm.addEventListener("submit", event => event.preventDefault());
+  els.resumeBuilderForm.addEventListener("input", event => {
+    if (event.target.matches('[data-field="current"]')) {
+      const card = event.target.closest(".repeater-item");
+      const endDate = card?.querySelector('[data-field="endDate"]');
+      if (endDate) {
+        endDate.disabled = event.target.checked;
+        if (event.target.checked) endDate.value = "";
+      }
+    }
+    syncBuilderFromForm();
+  });
+  els.resumeBuilderForm.addEventListener("click", event => {
+    const remove = event.target.closest(".remove-builder-item");
+    const move = event.target.closest(".move-builder-item");
+    if (remove) removeBuilderItem(remove.dataset.type, remove.dataset.id);
+    if (move) changeBuilderItem(move.dataset.type, move.dataset.id, move.dataset.direction);
+  });
+  els.builderDensity.addEventListener("change", syncBuilderFromForm);
+  els.addExperience.addEventListener("click", () => addBuilderItem("experience"));
+  els.addEducation.addEventListener("click", () => addBuilderItem("education"));
+  els.addProject.addEventListener("click", () => addBuilderItem("projects"));
+  els.addCertification.addEventListener("click", () => addBuilderItem("certifications"));
+  els.saveResumeBuilder.addEventListener("click", saveBuilderDraft);
+  els.copyResumeText.addEventListener("click", copyBuilderResume);
+  els.downloadResumeText.addEventListener("click", downloadBuilderText);
+  els.downloadResumeWord.addEventListener("click", downloadBuilderWord);
+  els.printResume.addEventListener("click", printBuilderResume);
   els.sourceType.addEventListener("change", () => {
     const val = els.sourceType.value;
     if (val === "linkedin" || val === "remotive") {

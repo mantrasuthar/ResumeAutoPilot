@@ -312,6 +312,7 @@ function defaultState() {
     },
     consent: null,
     resume: null,
+    resumeBuilder: defaultResumeBuilder(),
     sources: CANADA_DEFAULT_SOURCES.map(makeSource),
     jobs: [],
     queue: [],
@@ -348,6 +349,136 @@ function defaultState() {
   };
 }
 
+function defaultResumeBuilder() {
+  return {
+    contact: { fullName: "", email: "", phone: "", location: "", linkedin: "", portfolio: "" },
+    headline: "",
+    summary: "",
+    skills: [],
+    experience: [],
+    education: [],
+    projects: [],
+    certifications: [],
+    targetJobDescription: "",
+    density: "standard",
+    updatedAt: null
+  };
+}
+
+function cleanBuilderText(value, maxLength = 500) {
+  return String(value || "").replace(/\r\n/g, "\n").trim().slice(0, maxLength);
+}
+
+function cleanBuilderLines(value, maxItems = 8, maxLength = 260) {
+  const items = Array.isArray(value) ? value : String(value || "").split(/\n|,/);
+  return items.map(item => cleanBuilderText(item, maxLength)).filter(Boolean).slice(0, maxItems);
+}
+
+function builderItemId(value, prefix) {
+  const current = cleanBuilderText(value, 80);
+  return /^[a-z]+_[a-z0-9_-]{3,}$/i.test(current) ? current : id(prefix);
+}
+
+function sanitizeResumeBuilder(value = {}) {
+  const contact = value.contact || {};
+  const cleanItems = (items, maxItems, mapper) => (Array.isArray(items) ? items : []).slice(0, maxItems).map(mapper);
+  return {
+    contact: {
+      fullName: cleanBuilderText(contact.fullName, 100),
+      email: cleanBuilderText(contact.email, 160),
+      phone: cleanBuilderText(contact.phone, 60),
+      location: cleanBuilderText(contact.location, 140),
+      linkedin: cleanBuilderText(contact.linkedin, 300),
+      portfolio: cleanBuilderText(contact.portfolio, 300)
+    },
+    headline: cleanBuilderText(value.headline, 140),
+    summary: cleanBuilderText(value.summary, 1200),
+    skills: cleanBuilderLines(value.skills, 40, 80),
+    experience: cleanItems(value.experience, 12, item => ({
+      id: builderItemId(item?.id, "exp"),
+      title: cleanBuilderText(item?.title, 120),
+      company: cleanBuilderText(item?.company, 120),
+      location: cleanBuilderText(item?.location, 120),
+      startDate: cleanBuilderText(item?.startDate, 40),
+      endDate: cleanBuilderText(item?.endDate, 40),
+      current: Boolean(item?.current),
+      bullets: cleanBuilderLines(item?.bullets, 10, 320)
+    })),
+    education: cleanItems(value.education, 8, item => ({
+      id: builderItemId(item?.id, "edu"),
+      school: cleanBuilderText(item?.school, 160),
+      degree: cleanBuilderText(item?.degree, 180),
+      location: cleanBuilderText(item?.location, 120),
+      graduationDate: cleanBuilderText(item?.graduationDate, 40),
+      details: cleanBuilderLines(item?.details, 5, 260)
+    })),
+    projects: cleanItems(value.projects, 10, item => ({
+      id: builderItemId(item?.id, "project"),
+      name: cleanBuilderText(item?.name, 140),
+      link: cleanBuilderText(item?.link, 300),
+      technologies: cleanBuilderText(item?.technologies, 240),
+      bullets: cleanBuilderLines(item?.bullets, 6, 320)
+    })),
+    certifications: cleanItems(value.certifications, 12, item => ({
+      id: builderItemId(item?.id, "cert"),
+      name: cleanBuilderText(item?.name, 180),
+      issuer: cleanBuilderText(item?.issuer, 140),
+      date: cleanBuilderText(item?.date, 40)
+    })),
+    targetJobDescription: cleanBuilderText(value.targetJobDescription, 12000),
+    density: ["standard", "compact"].includes(value.density) ? value.density : "standard",
+    updatedAt: value.updatedAt || null
+  };
+}
+
+function seedResumeBuilder(state, resume) {
+  const existing = sanitizeResumeBuilder(state.resumeBuilder || {});
+  const answers = state.answerBank || {};
+  const name = guessName(resume);
+  const role = resume.roles?.[0] || resume.details?.currentTitle || "";
+  const skills = resume.skills || [];
+  const location = resume.details?.location || resume.locations?.find(value => !/^remote$/i.test(value)) || "";
+  const generatedSummary = role
+    ? `${role} with experience in ${skills.slice(0, 6).join(", ") || "cross-functional delivery"}. Focused on clear execution, measurable outcomes, and reliable collaboration.`
+    : "";
+  const experience = existing.experience.length ? existing.experience : (resume.details?.currentCompany || role) ? [{
+    id: id("exp"),
+    title: resume.details?.currentTitle || role,
+    company: resume.details?.currentCompany || "",
+    location,
+    startDate: "",
+    endDate: "",
+    current: true,
+    bullets: []
+  }] : [];
+  const education = existing.education.length ? existing.education : (resume.details?.school || resume.details?.degree) ? [{
+    id: id("edu"),
+    school: resume.details?.school || "",
+    degree: resume.details?.degree || "",
+    location: "",
+    graduationDate: "",
+    details: []
+  }] : [];
+
+  return sanitizeResumeBuilder({
+    ...existing,
+    contact: {
+      fullName: name.fullName || existing.contact.fullName,
+      email: resume.email || answers.email || existing.contact.email,
+      phone: resume.phone || answers.phone || existing.contact.phone,
+      location: location || [answers.city, answers.province].filter(Boolean).join(", ") || existing.contact.location,
+      linkedin: resume.details?.linkedin || answers.linkedin || existing.contact.linkedin,
+      portfolio: resume.details?.portfolio || answers.portfolio || existing.contact.portfolio
+    },
+    headline: role || existing.headline,
+    summary: existing.summary || generatedSummary,
+    skills: skills.length ? skills : existing.skills,
+    experience,
+    education,
+    updatedAt: new Date().toISOString()
+  });
+}
+
 function makeSource(template) {
   return {
     id: id("source"),
@@ -365,7 +496,9 @@ function makeSource(template) {
 
 function readState() {
   const { stateFile } = ensureStorage();
-  return JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  state.resumeBuilder = sanitizeResumeBuilder(state.resumeBuilder || {});
+  return state;
 }
 
 function writeState(state) {
@@ -1484,8 +1617,8 @@ function recencyScore(value) {
 }
 
 function upsertJobs(state, scannedJobs, options = {}) {
-  const existing = new Map(state.jobs.map(job => [job.id, job]));
-  const nextJobs = [...state.jobs];
+  const nextJobs = options.replaceResults ? [] : [...state.jobs];
+  const existing = new Map(nextJobs.map(job => [job.id, job]));
   let added = 0;
   let updated = 0;
   const intent = locationIntent(options.targetLocation || "");
@@ -1601,7 +1734,10 @@ async function performScan(state, options = {}) {
     }
   }
 
-  const upsert = upsertJobs(state, scannedJobs, { targetLocation: options.targetLocation });
+  const upsert = upsertJobs(state, scannedJobs, {
+    targetLocation: options.targetLocation,
+    replaceResults: options.replaceResults === true
+  });
   return { results, ...upsert };
 }
 
@@ -2338,6 +2474,7 @@ function publicState(state) {
     consent: state.consent || null,
     preferences: state.preferences,
     resume: state.resume,
+    resumeBuilder: sanitizeResumeBuilder(state.resumeBuilder || {}),
     sources: state.sources,
     jobs: state.jobs.map(job => {
       const openUrl = applicationUrlFor(state, job);
@@ -2389,6 +2526,23 @@ async function handleApi(req, res, pathname) {
         minimumScore: clamp(Number(body.minimumScore ?? state.preferences.minimumScore), 0, 100),
         maxQueue: clamp(Number(body.maxQueue ?? state.preferences.maxQueue), 1, 25)
       };
+      const locationFilter = state.preferences.locations.join(" ");
+      const locationFilterIntent = locationIntent(locationFilter);
+      state.jobs = state.jobs
+        .filter(job => !locationFilter || jobMatchesLocationIntent(job, locationFilterIntent))
+        .map(job => {
+          const match = scoreJob(job, state.resume, state.preferences);
+          return {
+            ...job,
+            score: match.score,
+            matchedSkills: match.matchedSkills,
+            matchedKeywords: match.matchedKeywords,
+            roleMatches: match.roleMatches,
+            locationMatches: match.locationMatches,
+            status: match.score >= state.preferences.minimumScore ? "matched" : "low-match"
+          };
+        })
+        .sort((a, b) => b.score - a.score || dateValue(b.postedAt) - dateValue(a.postedAt));
       addActivity(state, "Preferences updated.");
       writeState(state);
       return sendJson(res, 200, publicState(state));
@@ -2399,6 +2553,15 @@ async function handleApi(req, res, pathname) {
       const body = await readJson(req);
       state.answerBank = { ...state.answerBank, ...body };
       addActivity(state, "Answer bank updated.");
+      writeState(state);
+      return sendJson(res, 200, publicState(state));
+    }
+
+    if (req.method === "PATCH" && pathname === "/api/resume-builder") {
+      const state = readState();
+      const body = await readJson(req);
+      state.resumeBuilder = sanitizeResumeBuilder({ ...body, updatedAt: new Date().toISOString() });
+      addActivity(state, "Resume Builder draft saved.");
       writeState(state);
       return sendJson(res, 200, publicState(state));
     }
@@ -2445,6 +2608,7 @@ async function handleApi(req, res, pathname) {
       for (const [key, value] of Object.entries(inferredAnswers)) {
         if (value) state.answerBank[key] = value;
       }
+      state.resumeBuilder = seedResumeBuilder(state, parsed);
       if (parsed.roles?.length) {
         state.preferences.roles = mergeResumeRoles(parsed.roles, state.preferences.roles);
       }
@@ -2475,7 +2639,8 @@ async function handleApi(req, res, pathname) {
       }
 
       const resumeLocations = state.resume.locations || [];
-      const inferredLocation = resumeLocations.find(location => /^remote\s+\S+/i.test(location))
+      const inferredLocation = state.preferences.locations?.[0]
+        || resumeLocations.find(location => /^remote\s+\S+/i.test(location))
         || resumeLocations.find(location => !/^remote$/i.test(location))
         || resumeLocations[0]
         || "Worldwide";
@@ -2492,6 +2657,7 @@ async function handleApi(req, res, pathname) {
       const scan = await performScan(state, {
         includeConfigured: false,
         targetLocation: target.location,
+        replaceResults: true,
         extraSources: buildTargetedSources(target)
       });
       const matches = targetCandidates(state, target, { includeQueued: true });
@@ -2640,6 +2806,7 @@ async function handleApi(req, res, pathname) {
       if (target.scanBefore) {
         scan = await performScan(state, {
           targetLocation: target.location,
+          replaceResults: true,
           extraSources: buildTargetedSources(target)
         });
       }
