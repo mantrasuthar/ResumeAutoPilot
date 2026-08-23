@@ -4,6 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 const net = require("net");
 const { spawn } = require("child_process");
+const mammoth = require("mammoth");
 
 const PORT = Number(process.env.PORT || 4757);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -312,7 +313,9 @@ function defaultState() {
     },
     consent: null,
     resume: null,
+    careerProfile: null,
     resumeBuilder: defaultResumeBuilder(),
+    tailoredResumes: [],
     sources: CANADA_DEFAULT_SOURCES.map(makeSource),
     jobs: [],
     queue: [],
@@ -359,6 +362,7 @@ function defaultResumeBuilder() {
     education: [],
     projects: [],
     certifications: [],
+    selectedHighlights: [],
     targetJobDescription: "",
     density: "standard",
     updatedAt: null
@@ -425,6 +429,7 @@ function sanitizeResumeBuilder(value = {}) {
       issuer: cleanBuilderText(item?.issuer, 140),
       date: cleanBuilderText(item?.date, 40)
     })),
+    selectedHighlights: cleanBuilderLines(value.selectedHighlights, 18, 320),
     targetJobDescription: cleanBuilderText(value.targetJobDescription, 12000),
     density: ["standard", "compact"].includes(value.density) ? value.density : "standard",
     updatedAt: value.updatedAt || null
@@ -498,6 +503,8 @@ function readState() {
   const { stateFile } = ensureStorage();
   const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
   state.resumeBuilder = sanitizeResumeBuilder(state.resumeBuilder || {});
+  state.careerProfile = state.careerProfile || null;
+  state.tailoredResumes = Array.isArray(state.tailoredResumes) ? state.tailoredResumes : [];
   return state;
 }
 
@@ -749,13 +756,22 @@ async function plainTextFromBuffer(file) {
     }
   }
 
-  if (ext === ".docx" || ext === ".doc") {
+  if (ext === ".docx") {
+    const result = await mammoth.extractRawText({ buffer: file.buffer });
+    const extracted = normalizeResumeText(result.value || "");
+    return {
+      text: extracted,
+      quality: isUsableResumeText(extracted) ? "parsed-docx" : "unreadable-word"
+    };
+  }
+
+  if (ext === ".doc") {
     return {
       text: file.buffer
         .toString("latin1")
         .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, " ")
         .replace(/\s+/g, " "),
-      quality: "limited-word"
+      quality: "legacy-word-limited"
     };
   }
 
@@ -862,6 +878,188 @@ function parseResume(text, file) {
     details,
     wordCount: words.length,
     preview: normalizedText.replace(/\s+/g, " ").trim().slice(0, 700)
+  };
+}
+
+function careerSectionHeading(line) {
+  const clean = String(line || "").trim().replace(/[:|]+$/, "").toLowerCase();
+  const sections = [
+    ["experience", /^(professional |work |employment |career )?(experience|history)$/],
+    ["projects", /^(selected |personal |professional |academic )?projects?$/],
+    ["education", /^(education|academic background|qualifications)$/],
+    ["certifications", /^(certifications?|licenses?|credentials?)$/],
+    ["skills", /^(technical |core |professional )?(skills|competencies|expertise)$/],
+    ["achievements", /^(achievements?|accomplishments?|awards?)$/],
+    ["summary", /^(summary|profile|professional summary|about me)$/]
+  ];
+  return sections.find(([, pattern]) => pattern.test(clean))?.[0] || "";
+}
+
+function extractCareerInventory(text) {
+  const lines = normalizeResumeText(text).split("\n").map(line => line.trim()).filter(Boolean);
+  const inventory = [];
+  const contextLines = [];
+  let section = "general";
+  const actionVerb = /^(achieved|analyzed|architected|automated|built|collaborated|created|delivered|designed|developed|drove|implemented|improved|increased|launched|led|managed|migrated|optimized|reduced|resolved|scaled|streamlined|supported|tested)\b/i;
+  const contactLine = /@|linkedin\.com|github\.com|https?:\/\/|(?:\+?\d[\d\s().-]{8,})/i;
+  const dateOnly = /^(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+)?\d{4}\s*[-–—]\s*(?:Present|Current|(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+)?\d{4})$/i;
+
+  for (const line of lines) {
+    const nextSection = careerSectionHeading(line);
+    if (nextSection) {
+      section = nextSection;
+      contextLines.length = 0;
+      continue;
+    }
+    if (contactLine.test(line) || dateOnly.test(line)) continue;
+    const wordCount = line.split(/\s+/).length;
+    const isContext = line.length <= 130 && wordCount <= 14 && !/[.!?]$/.test(line) && !actionVerb.test(line);
+    if (isContext) {
+      contextLines.push(line);
+      if (contextLines.length > 3) contextLines.shift();
+      continue;
+    }
+    const isCareerContent = line.length >= 24
+      && line.length <= 420
+      && (actionVerb.test(line) || /\b\d+(?:\.\d+)?%|\$[\d,.]+|\b\d+[x+]\b/.test(line) || ["experience", "projects", "achievements"].includes(section));
+    if (!isCareerContent) continue;
+    inventory.push({
+      id: id("career_item"),
+      section,
+      context: contextLines.slice(-2).join(" | ").slice(0, 220),
+      text: line.slice(0, 420),
+      terms: importantTerms(line).slice(0, 24)
+    });
+    if (inventory.length >= 500) break;
+  }
+  return inventory;
+}
+
+function parseCareerCv(text, file) {
+  const normalized = normalizeResumeText(text);
+  const parsed = parseResume(normalized, file);
+  return {
+    ...parsed,
+    id: id("career_cv"),
+    sourceKind: "career-cv",
+    fullText: normalized.slice(0, 400000),
+    inventory: extractCareerInventory(normalized)
+  };
+}
+
+function publicCareerProfile(profile) {
+  if (!profile) return null;
+  const { fullText, inventory, savedPath, ...safe } = profile;
+  return {
+    ...safe,
+    inventoryCount: Array.isArray(inventory) ? inventory.length : 0
+  };
+}
+
+function jobTailoringKeywords(job) {
+  const text = normalizeResumeText(`${job.title || ""}\n${job.department || ""}\n${job.description || ""}`);
+  const frequencies = new Map();
+  const titleTerms = importantTerms(job.title || "");
+  for (const token of text.toLowerCase().match(/[a-z][a-z0-9+#.-]{2,}/g) || []) {
+    const clean = token.replace(/^[.-]+|[.-]+$/g, "");
+    if (clean.length < 3 || RESUME_STOP_WORDS.has(clean) || /^\d+$/.test(clean)) continue;
+    frequencies.set(clean, (frequencies.get(clean) || 0) + 1 + (titleTerms.includes(clean) ? 4 : 0));
+  }
+  return [...new Set([
+    ...extractResumeSkills(text),
+    ...titleTerms,
+    ...[...frequencies.entries()].sort((a, b) => b[1] - a[1]).map(([word]) => word)
+  ])].slice(0, 40);
+}
+
+function tailorResumeForJob(state, job) {
+  const career = state.careerProfile;
+  if (!career) throw new Error("Upload a readable Career CV before generating a tailored resume.");
+  const cvText = String(career.fullText || "").toLowerCase();
+  const jobKeywords = jobTailoringKeywords(job);
+  const matchedKeywords = jobKeywords.filter(keyword => cvText.includes(keyword.toLowerCase())).slice(0, 24);
+  const matchedSet = new Set(matchedKeywords.map(keyword => keyword.toLowerCase()));
+  const titleTerms = importantTerms(job.title || "");
+  const rankedHighlights = (career.inventory || []).map(item => {
+    const text = `${item.context || ""} ${item.text || ""}`.toLowerCase();
+    const keywordMatches = [...matchedSet].filter(keyword => text.includes(keyword));
+    const titleMatches = titleTerms.filter(term => text.includes(term));
+    const score = keywordMatches.length * 6
+      + titleMatches.length * 4
+      + (/\b\d+(?:\.\d+)?%|\$[\d,.]+|\b\d+[x+]\b/.test(text) ? 3 : 0)
+      + (["experience", "projects", "achievements"].includes(item.section) ? 2 : 0);
+    return { ...item, score };
+  }).filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.text.length - b.text.length);
+  const seen = new Set();
+  const selectedHighlights = [];
+  for (const item of rankedHighlights) {
+    const key = item.text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    selectedHighlights.push(item.text);
+    if (selectedHighlights.length >= 12) break;
+  }
+
+  const base = sanitizeResumeBuilder(state.resumeBuilder || seedResumeBuilder(state, career));
+  const careerSkillNames = new Map((career.skills || []).map(skill => [skill.toLowerCase(), skill]));
+  const skillCandidates = [
+    ...matchedKeywords.map(keyword => careerSkillNames.get(keyword.toLowerCase())).filter(Boolean),
+    ...(base.skills || []),
+    ...(career.skills || [])
+  ];
+  const seenSkills = new Set();
+  const relevantSkills = skillCandidates.filter(skill => {
+    const key = skill.toLowerCase();
+    if (seenSkills.has(key)) return false;
+    seenSkills.add(key);
+    return true;
+  }).slice(0, 24);
+  const builder = sanitizeResumeBuilder({
+    ...base,
+    skills: relevantSkills,
+    selectedHighlights,
+    targetJobDescription: job.description || "",
+    updatedAt: new Date().toISOString()
+  });
+  const coverageBase = Math.min(12, jobKeywords.length) || 1;
+  const keywordCoverage = Math.min(100, Math.round((matchedKeywords.slice(0, 12).length / coverageBase) * 100));
+  return {
+    id: id("tailored"),
+    jobId: job.id,
+    status: "draft",
+    createdAt: new Date().toISOString(),
+    approvedAt: null,
+    job: {
+      title: job.title,
+      company: job.company,
+      location: job.location,
+      applyUrl: applicationUrlFor(state, job)
+    },
+    builder,
+    matchedKeywords,
+    keywordCoverage,
+    selectedHighlightCount: selectedHighlights.length
+  };
+}
+
+function publicTailoredResume(value) {
+  return {
+    id: cleanBuilderText(value?.id, 100),
+    jobId: cleanBuilderText(value?.jobId, 100),
+    status: value?.status === "approved" ? "approved" : "draft",
+    createdAt: value?.createdAt || null,
+    approvedAt: value?.approvedAt || null,
+    job: {
+      title: cleanBuilderText(value?.job?.title, 180),
+      company: cleanBuilderText(value?.job?.company, 180),
+      location: cleanBuilderText(value?.job?.location, 180),
+      applyUrl: safeApplicationUrl(value?.job?.applyUrl)
+    },
+    builder: sanitizeResumeBuilder(value?.builder || {}),
+    matchedKeywords: cleanBuilderLines(value?.matchedKeywords, 24, 80),
+    keywordCoverage: clamp(Number(value?.keywordCoverage || 0), 0, 100),
+    selectedHighlightCount: clamp(Number(value?.selectedHighlightCount || 0), 0, 18)
   };
 }
 
@@ -2474,6 +2672,8 @@ function publicState(state) {
     consent: state.consent || null,
     preferences: state.preferences,
     resume: state.resume,
+    careerProfile: publicCareerProfile(state.careerProfile),
+    tailoredResumes: (state.tailoredResumes || []).map(publicTailoredResume),
     resumeBuilder: sanitizeResumeBuilder(state.resumeBuilder || {}),
     sources: state.sources,
     jobs: state.jobs.map(job => {
@@ -2632,6 +2832,66 @@ async function handleApi(req, res, pathname) {
       return sendJson(res, 200, publicState(state));
     }
 
+    if (req.method === "POST" && pathname === "/api/upload-career-cv") {
+      const body = await readBody(req);
+      const { files } = parseMultipart(body, req.headers["content-type"]);
+      const file = files.find(item => item.name === "careerCv") || files[0];
+      if (!file) return sendJson(res, 400, { error: "No Career CV file was uploaded." });
+
+      file.filename = safeFileName(file.filename);
+      const extension = path.extname(file.filename).toLowerCase();
+      if (![".txt", ".docx", ".pdf"].includes(extension)) {
+        return sendJson(res, 400, { error: "Use a readable DOCX, TXT, or text-based PDF. Legacy DOC and image files are not supported." });
+      }
+      const extracted = await plainTextFromBuffer(file);
+      const rejectedQualities = new Set(["unreadable-pdf", "rough-pdf", "unreadable-word", "legacy-word-limited", "unknown"]);
+      if (rejectedQualities.has(extracted.quality) || !isUsableResumeText(extracted.text)) {
+        return sendJson(res, 400, { error: "This CV could not be read reliably. Upload a DOCX, TXT, or selectable-text PDF. Scanned/image CVs are not OCRed." });
+      }
+
+      const savedName = `${Date.now()}-career-cv-${file.filename}`;
+      const { uploadDir } = ensureStorage();
+      fs.writeFileSync(path.join(uploadDir, savedName), file.buffer);
+      const profile = parseCareerCv(extracted.text, { ...file, quality: extracted.quality });
+      profile.savedPath = path.join("data", "users", getUserId(), "uploads", savedName);
+
+      const state = readState();
+      state.careerProfile = profile;
+      state.tailoredResumes = [];
+      if (!state.resume) {
+        const { fullText, inventory, ...matchingProfile } = profile;
+        state.resume = { ...matchingProfile, id: id("resume") };
+      }
+      const name = guessName(profile);
+      const inferredAnswers = {
+        firstName: name.firstName,
+        lastName: name.lastName,
+        email: profile.email,
+        phone: profile.phone,
+        postalCode: profile.details?.postalCode,
+        country: profile.details?.country,
+        city: profile.details?.city,
+        province: profile.details?.province,
+        portfolio: profile.details?.portfolio,
+        linkedin: profile.details?.linkedin,
+        github: profile.details?.github,
+        currentCompany: profile.details?.currentCompany,
+        currentTitle: profile.details?.currentTitle,
+        school: profile.details?.school,
+        degree: profile.details?.degree,
+        yearsExperience: profile.details?.yearsExperience
+      };
+      for (const [key, value] of Object.entries(inferredAnswers)) {
+        if (value) state.answerBank[key] = value;
+      }
+      state.resumeBuilder = seedResumeBuilder(state, profile);
+      if (profile.roles?.length) state.preferences.roles = mergeResumeRoles(profile.roles, state.preferences.roles);
+      if (profile.locations?.length && !state.preferences.locations?.length) state.preferences.locations = profile.locations.slice(0, 6);
+      addActivity(state, `Career CV uploaded and indexed: ${file.filename} (${profile.inventory.length} reusable career highlights).`);
+      writeState(state);
+      return sendJson(res, 200, publicState(state));
+    }
+
     if (req.method === "POST" && pathname === "/api/jobs/match-resume") {
       const state = readState();
       if (!state.resume) {
@@ -2700,6 +2960,41 @@ async function handleApi(req, res, pathname) {
       addActivity(state, "Resume removed.");
       writeState(state);
       return sendJson(res, 200, publicState(state));
+    }
+
+    if (req.method === "DELETE" && pathname === "/api/career-cv") {
+      const state = readState();
+      state.careerProfile = null;
+      state.tailoredResumes = [];
+      if (state.resume?.sourceKind === "career-cv") state.resume = null;
+      addActivity(state, "Career CV and tailored resume drafts removed.");
+      writeState(state);
+      return sendJson(res, 200, publicState(state));
+    }
+
+    const tailorJobMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/tailor$/);
+    if (tailorJobMatch && req.method === "POST") {
+      const state = readState();
+      const job = state.jobs.find(item => item.id === tailorJobMatch[1]);
+      if (!job) return sendJson(res, 404, { error: "Job not found." });
+      if (!state.careerProfile) return sendJson(res, 400, { error: "Upload a readable Career CV before tailoring a resume." });
+      const tailored = tailorResumeForJob(state, job);
+      state.tailoredResumes = [tailored, ...(state.tailoredResumes || []).filter(item => item.jobId !== job.id)].slice(0, 100);
+      addActivity(state, `Tailored resume drafted for ${job.title} at ${job.company}.`);
+      writeState(state);
+      return sendJson(res, 201, { ...publicState(state), tailoredResume: publicTailoredResume(tailored) });
+    }
+
+    const tailoredMatch = pathname.match(/^\/api\/tailored-resumes\/([^/]+)\/approve$/);
+    if (tailoredMatch && req.method === "POST") {
+      const state = readState();
+      const tailored = (state.tailoredResumes || []).find(item => item.id === tailoredMatch[1]);
+      if (!tailored) return sendJson(res, 404, { error: "Tailored resume not found." });
+      tailored.status = "approved";
+      tailored.approvedAt = new Date().toISOString();
+      addActivity(state, `Tailored resume approved for ${tailored.job.title} at ${tailored.job.company}.`);
+      writeState(state);
+      return sendJson(res, 200, { ...publicState(state), tailoredResume: publicTailoredResume(tailored) });
     }
 
     if (req.method === "POST" && pathname === "/api/sources") {

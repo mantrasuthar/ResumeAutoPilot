@@ -9,7 +9,8 @@ const state = {
   lastAutoMatchCount: null,
   builderDraft: null,
   builderLoadedVersion: "",
-  builderDirty: false
+  builderDirty: false,
+  tailoredReview: null
 };
 
 const CONSENT_VERSION = "2026-08-22";
@@ -23,6 +24,12 @@ const els = {
   uploadResumeBtn: document.querySelector("#uploadResumeBtn"),
   resumeFileName: document.querySelector("#resumeFileName"),
   resumeMeta: document.querySelector("#resumeMeta"),
+  careerCvForm: document.querySelector("#careerCvForm"),
+  careerCvInput: document.querySelector("#careerCvInput"),
+  careerCvFileName: document.querySelector("#careerCvFileName"),
+  careerCvMeta: document.querySelector("#careerCvMeta"),
+  uploadCareerCvBtn: document.querySelector("#uploadCareerCvBtn"),
+  removeCareerCvBtn: document.querySelector("#removeCareerCvBtn"),
   quickUploadResume: document.querySelector("#quickUploadResume"),
   quickScanSources: document.querySelector("#quickScanSources"),
   gettingStarted: document.querySelector("#gettingStarted"),
@@ -123,6 +130,16 @@ const els = {
   dialogCoverNote: document.querySelector("#dialogCoverNote"),
   dialogAnswers: document.querySelector("#dialogAnswers"),
   approveAndOpen: document.querySelector("#approveAndOpen"),
+  tailoredResumeDialog: document.querySelector("#tailoredResumeDialog"),
+  tailoredDialogTitle: document.querySelector("#tailoredDialogTitle"),
+  tailoredDialogMeta: document.querySelector("#tailoredDialogMeta"),
+  tailoredCoverage: document.querySelector("#tailoredCoverage"),
+  tailoredKeywords: document.querySelector("#tailoredKeywords"),
+  tailoredResumePreview: document.querySelector("#tailoredResumePreview"),
+  closeTailoredDialog: document.querySelector("#closeTailoredDialog"),
+  regenerateTailoredResume: document.querySelector("#regenerateTailoredResume"),
+  approveTailoredResume: document.querySelector("#approveTailoredResume"),
+  applyTailoredResume: document.querySelector("#applyTailoredResume"),
   toast: document.querySelector("#toast")
 };
 
@@ -209,6 +226,7 @@ function render() {
   if (!state.data) return;
   renderPreferences();
   renderResume();
+  renderCareerCv();
   renderGettingStarted();
   renderStats();
   renderTargetDefaults();
@@ -294,7 +312,7 @@ function renderResume() {
   if (!resume) {
     els.resumeFileName.textContent = "No resume loaded";
     els.resumeSubtitle.textContent = "Upload a resume to build a matching profile.";
-    els.resumeMeta.textContent = "PDF and TXT are fully parsed; Word extraction is limited.";
+    els.resumeMeta.textContent = "DOCX, PDF, and TXT are parsed; legacy DOC extraction is limited.";
     els.removeResumeBtn.style.display = "none";
     els.uploadResumeBtn.innerHTML = '<i data-lucide="upload-cloud" size="16"></i> Upload';
     return;
@@ -305,6 +323,21 @@ function renderResume() {
   els.resumeMeta.textContent = `${resume.parseQuality} parse, uploaded ${formatDate(resume.uploadedAt)}.`;
   els.removeResumeBtn.style.display = "inline-flex";
   els.uploadResumeBtn.innerHTML = '<i data-lucide="refresh-cw" size="16"></i> Replace';
+}
+
+function renderCareerCv() {
+  const profile = state.data.careerProfile;
+  if (!profile) {
+    els.careerCvFileName.textContent = "Add your Career CV";
+    els.careerCvMeta.textContent = "Your complete career history powers job-specific resumes.";
+    els.removeCareerCvBtn.hidden = true;
+    els.uploadCareerCvBtn.innerHTML = '<i data-lucide="upload-cloud" size="16"></i> Upload CV';
+    return;
+  }
+  els.careerCvFileName.textContent = profile.filename;
+  els.careerCvMeta.textContent = `${profile.wordCount} words and ${profile.inventoryCount} reusable career highlights indexed.`;
+  els.removeCareerCvBtn.hidden = false;
+  els.uploadCareerCvBtn.innerHTML = '<i data-lucide="refresh-cw" size="16"></i> Replace CV';
 }
 
 function renderStats() {
@@ -339,7 +372,14 @@ function renderJobs() {
     return;
   }
   els.jobsList.className = "job-list";
-  els.jobsList.innerHTML = jobs.map(job => `
+  els.jobsList.innerHTML = jobs.map(job => {
+    const tailored = (state.data.tailoredResumes || []).find(item => item.jobId === job.id);
+    const tailorAction = !state.data.careerProfile
+      ? `<button class="secondary add-career-cv" type="button"><i data-lucide="files" size="14"></i> Add Career CV</button>`
+      : tailored
+        ? `<button class="${tailored.status === "approved" ? "primary" : "secondary"} review-tailored" data-tailored-id="${escapeAttr(tailored.id)}" type="button"><i data-lucide="file-check-2" size="14"></i> ${tailored.status === "approved" ? "Use tailored resume" : "Review tailored resume"}</button>`
+        : `<button class="primary tailor-job" data-job-id="${escapeAttr(job.id)}" type="button"><i data-lucide="wand-sparkles" size="14"></i> Tailor resume</button>`;
+    return `
     <article class="job-card">
       <div class="job-main">
         <div class="job-title">
@@ -360,6 +400,7 @@ function renderJobs() {
       </div>
       <div class="job-actions">
         <div class="score-ring" style="--score:${job.score}%">${job.score}</div>
+        ${tailorAction}
         <button class="secondary queue-job" data-job-id="${job.id}">
           <i data-lucide="plus" size="14"></i>
           Queue
@@ -377,7 +418,8 @@ function renderJobs() {
         `}
       </div>
     </article>
-  `).join("");
+  `;
+  }).join("");
   if (window.lucide) lucide.createIcons();
 }
 
@@ -759,6 +801,7 @@ function resumeContentHtml(draft) {
     </header>
     ${resumeSection("Professional Summary", draft.summary ? `<p>${escapeHtml(draft.summary)}</p>` : "")}
     ${resumeSection("Skills", draft.skills?.length ? `<p>${draft.skills.map(escapeHtml).join(" | ")}</p>` : "")}
+    ${resumeSection("Selected Highlights", draft.selectedHighlights?.length ? `<ul>${draft.selectedHighlights.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "")}
     ${resumeSection("Experience", experience)}
     ${resumeSection("Education", education)}
     ${resumeSection("Projects", projects)}
@@ -774,6 +817,7 @@ function resumePlainText(draft) {
   const section = (title, content) => { if (content.length) lines.push("", title.toUpperCase(), ...content); };
   section("Professional Summary", draft.summary ? [draft.summary] : []);
   section("Skills", draft.skills?.length ? [draft.skills.join(" | ")] : []);
+  section("Selected Highlights", (draft.selectedHighlights || []).map(item => `- ${item}`));
   section("Experience", (draft.experience || []).filter(item => item.title || item.company).flatMap(item => [
     [item.title, item.company].filter(Boolean).join(", ") + (builderDateRange(item) ? ` | ${builderDateRange(item)}` : ""),
     item.location || "",
@@ -1105,6 +1149,118 @@ async function removeResume() {
   } finally {
     done();
   }
+}
+
+async function uploadCareerCv(event) {
+  event?.preventDefault();
+  if (!els.careerCvInput.files.length) {
+    showToast("Choose a Career CV first.");
+    return;
+  }
+  const done = setBusy(event?.submitter || els.uploadCareerCvBtn, "Indexing...");
+  try {
+    const form = new FormData();
+    form.append("careerCv", els.careerCvInput.files[0]);
+    state.data = await api("/api/upload-career-cv", { method: "POST", body: form });
+    state.builderDraft = null;
+    state.builderLoadedVersion = "";
+    render();
+    showToast(`${state.data.careerProfile.inventoryCount} career highlights indexed. You can now tailor any matched job.`);
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    done();
+  }
+}
+
+async function removeCareerCv() {
+  const done = setBusy(els.removeCareerCvBtn, "Removing...");
+  try {
+    state.data = await api("/api/career-cv", { method: "DELETE" });
+    els.careerCvInput.value = "";
+    render();
+    showToast("Career CV and its tailored drafts were removed.");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    done();
+  }
+}
+
+function openCareerCvUpload() {
+  setView("resume");
+  window.setTimeout(() => {
+    els.careerCvForm.scrollIntoView({ behavior: "smooth", block: "center" });
+    els.careerCvInput.click();
+  }, 150);
+}
+
+function renderTailoredReview(record) {
+  state.tailoredReview = record;
+  els.tailoredDialogTitle.textContent = record.job.title;
+  els.tailoredDialogMeta.textContent = `${record.job.company} | ${record.job.location || "Location not listed"}`;
+  els.tailoredCoverage.textContent = `${record.keywordCoverage}%`;
+  els.tailoredKeywords.innerHTML = record.matchedKeywords.length
+    ? record.matchedKeywords.map(item => `<span class="pill success">${escapeHtml(item)}</span>`).join("")
+    : '<span class="pill muted">No verified keyword overlap</span>';
+  els.tailoredResumePreview.innerHTML = resumeContentHtml(record.builder);
+  const approved = record.status === "approved";
+  els.approveTailoredResume.hidden = approved;
+  els.applyTailoredResume.hidden = !approved;
+  if (window.lucide) lucide.createIcons();
+}
+
+function openTailoredReview(tailoredId) {
+  const record = (state.data.tailoredResumes || []).find(item => item.id === tailoredId);
+  if (!record) return showToast("Tailored resume not found.");
+  renderTailoredReview(record);
+  els.tailoredResumeDialog.showModal();
+}
+
+async function generateTailoredResume(jobId) {
+  const button = document.querySelector(`.tailor-job[data-job-id="${CSS.escape(jobId)}"]`);
+  const done = button ? setBusy(button, "Tailoring...") : () => {};
+  try {
+    const response = await api(`/api/jobs/${encodeURIComponent(jobId)}/tailor`, { method: "POST", body: "{}" });
+    state.data = response;
+    render();
+    renderTailoredReview(response.tailoredResume);
+    if (!els.tailoredResumeDialog.open) els.tailoredResumeDialog.showModal();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    done();
+  }
+}
+
+async function approveTailored() {
+  if (!state.tailoredReview) return;
+  const done = setBusy(els.approveTailoredResume, "Approving...");
+  try {
+    const response = await api(`/api/tailored-resumes/${encodeURIComponent(state.tailoredReview.id)}/approve`, { method: "POST", body: "{}" });
+    state.data = response;
+    render();
+    renderTailoredReview(response.tailoredResume);
+    showToast("Tailored resume approved. It is ready to download and use.");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    done();
+  }
+}
+
+function applyWithTailoredResume() {
+  const record = state.tailoredReview;
+  if (!record || record.status !== "approved") return showToast("Approve the tailored resume before applying.");
+  if (!record.job.applyUrl) return showToast("No valid employer application link is available.");
+  const applicationWindow = window.open("about:blank", "_blank");
+  if (!applicationWindow) return showToast("Allow pop-ups to open the employer application page.");
+  const safeName = [record.builder.contact?.fullName || "resume", record.job.company, record.job.title]
+    .filter(Boolean).join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  downloadBuilderFile(resumeDocumentHtml(record.builder), "application/msword", `${safeName || "tailored-resume"}.doc`);
+  applicationWindow.location.href = record.job.applyUrl;
+  els.tailoredResumeDialog.close();
+  showToast("Tailored resume downloaded. Upload it on the employer's application page.");
 }
 
 async function savePreferences() {
@@ -1443,6 +1599,13 @@ function setView(view) {
 function bindEvents() {
   els.resumeForm.addEventListener("submit", uploadResume);
   els.removeResumeBtn.addEventListener("click", removeResume);
+  els.careerCvForm.addEventListener("submit", uploadCareerCv);
+  els.removeCareerCvBtn.addEventListener("click", removeCareerCv);
+  els.careerCvInput.addEventListener("change", () => {
+    if (!els.careerCvInput.files.length) return;
+    els.careerCvFileName.textContent = els.careerCvInput.files[0].name;
+    els.careerCvMeta.textContent = "Selected and ready to index.";
+  });
   els.resumeInput.addEventListener("change", () => {
     if (els.resumeInput.files.length) {
       els.resumeFileName.textContent = els.resumeInput.files[0].name;
@@ -1536,7 +1699,13 @@ function bindEvents() {
 
   els.jobsList.addEventListener("click", event => {
     const queueButton = event.target.closest(".queue-job");
+    const tailorButton = event.target.closest(".tailor-job");
+    const reviewTailored = event.target.closest(".review-tailored");
+    const addCareerCv = event.target.closest(".add-career-cv");
     if (queueButton) queueJob(queueButton.dataset.jobId);
+    if (tailorButton) generateTailoredResume(tailorButton.dataset.jobId);
+    if (reviewTailored) openTailoredReview(reviewTailored.dataset.tailoredId);
+    if (addCareerCv) openCareerCvUpload();
   });
 
   els.sourcesList.addEventListener("click", event => {
@@ -1562,6 +1731,13 @@ function bindEvents() {
     if (!state.reviewItem) return;
     els.reviewDialog.close();
     approveQueue(state.reviewItem.id);
+  });
+  els.closeTailoredDialog.addEventListener("click", () => els.tailoredResumeDialog.close());
+  els.approveTailoredResume.addEventListener("click", approveTailored);
+  els.applyTailoredResume.addEventListener("click", applyWithTailoredResume);
+  els.regenerateTailoredResume.addEventListener("click", () => {
+    if (!state.tailoredReview) return;
+    generateTailoredResume(state.tailoredReview.jobId);
   });
 }
 

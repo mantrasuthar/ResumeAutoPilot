@@ -144,7 +144,7 @@
             </div>
             <div class="upload-copy">
               <strong id="resumeFileName">No resume loaded</strong>
-              <span id="resumeMeta">PDF and TXT are fully parsed; Word extraction is limited.</span>
+              <span id="resumeMeta">DOCX, PDF, and TXT are parsed; legacy DOC extraction is limited.</span>
             </div>
             <label for="resumeInput" class="select-file-trigger">
               <i data-lucide="file-plus" size="14"></i>
@@ -157,6 +157,32 @@
                 Upload
               </button>
               <button class="danger" type="button" id="removeResumeBtn" style="display: none;">
+                <i data-lucide="trash-2" size="16"></i>
+                Remove
+              </button>
+            </div>
+          </form>
+
+          <form id="careerCvForm" class="upload-box career-cv-upload">
+            <div class="document-icon" aria-hidden="true">
+              <i data-lucide="files" size="30"></i>
+            </div>
+            <div class="upload-copy">
+              <strong id="careerCvFileName">Add your Career CV</strong>
+              <span id="careerCvMeta">Your complete career history powers job-specific resumes.</span>
+            </div>
+            <p class="career-cv-guidance">Use DOCX, TXT, or a selectable-text PDF. Scanned or image-only CVs are not OCRed.</p>
+            <label for="careerCvInput" class="select-file-trigger">
+              <i data-lucide="file-plus" size="14"></i>
+              <span>Choose Career CV</span>
+            </label>
+            <input id="careerCvInput" type="file" name="careerCv" accept=".txt,.pdf,.docx" class="hidden-file-input">
+            <div class="upload-actions">
+              <button class="primary" type="submit" id="uploadCareerCvBtn">
+                <i data-lucide="upload-cloud" size="16"></i>
+                Upload CV
+              </button>
+              <button class="danger" type="button" id="removeCareerCvBtn" hidden>
                 <i data-lucide="trash-2" size="16"></i>
                 Remove
               </button>
@@ -698,6 +724,40 @@
         </button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="tailoredResumeDialog" class="tailored-resume-dialog">
+    <div class="dialog-card tailored-dialog-card">
+      <div class="dialog-head">
+        <div>
+          <h3 id="tailoredDialogTitle">Review tailored resume</h3>
+          <p id="tailoredDialogMeta"></p>
+        </div>
+        <button class="icon-button" id="closeTailoredDialog" type="button" aria-label="Close">
+          <i data-lucide="x" size="18"></i>
+        </button>
+      </div>
+      <div class="tailored-summary">
+        <div><strong id="tailoredCoverage">0%</strong><span>job keyword coverage</span></div>
+        <div id="tailoredKeywords" class="tag-row"></div>
+      </div>
+      <p class="tailored-truth-note"><i data-lucide="shield-check" size="15"></i> Built only from information found in your Career CV. Review every detail before using it.</p>
+      <article id="tailoredResumePreview" class="resume-paper tailored-preview"></article>
+      <div class="dialog-actions tailored-dialog-actions">
+        <button class="secondary" id="regenerateTailoredResume" type="button">
+          <i data-lucide="refresh-cw" size="16"></i>
+          Regenerate
+        </button>
+        <button class="primary" id="approveTailoredResume" type="button">
+          <i data-lucide="check" size="16"></i>
+          Approve resume
+        </button>
+        <button class="primary" id="applyTailoredResume" type="button" hidden>
+          <i data-lucide="external-link" size="16"></i>
+          Download and apply
+        </button>
+      </div>
+    </div>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
