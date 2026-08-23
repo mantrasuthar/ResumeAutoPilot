@@ -1981,6 +1981,17 @@ input[type="checkbox"] {
   gap: 16px;
 }
 
+.activity-panel {
+  gap: 28px;
+}
+
+.facts,
+.activity-list {
+  display: grid;
+  gap: 18px;
+  padding: 18px 14px 16px;
+}
+
 .source-card,
 .queue-card,
 .activity-item,
