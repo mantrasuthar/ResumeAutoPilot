@@ -12,6 +12,63 @@
 <body>
   <canvas id="particle-canvas"></canvas>
 
+  <div id="consent-screen" class="consent-screen" hidden>
+    <main class="consent-card" aria-labelledby="consentTitle">
+      <div class="consent-brand">
+        <div class="brand-mark"><i data-lucide="shield-check" size="22"></i></div>
+        <div>
+          <span>ApplyPilot</span>
+          <strong id="consentTitle">Terms and data use</strong>
+        </div>
+      </div>
+
+      <p class="consent-intro">Before continuing, please review how ApplyPilot uses your information to match and prepare job applications.</p>
+
+      <div class="consent-terms" tabindex="0">
+        <section>
+          <h2>Information we process</h2>
+          <p>Your resume may contain your name, contact details, location, work history, education, skills, and other information you include. We also store your account details, job preferences, saved answers, matched jobs, and application drafts.</p>
+        </section>
+        <section>
+          <h2>How it is used</h2>
+          <p>ApplyPilot extracts resume text, infers likely roles and skills, searches configured career sources, scores relevant jobs, and prepares application information. Your information is used to provide these features and maintain your workspace.</p>
+        </section>
+        <section>
+          <h2>Career websites</h2>
+          <p>When you open or prepare an application, relevant information may be sent to or entered on a third-party employer or recruiting website. Those sites have their own privacy policies and terms, which also apply.</p>
+        </section>
+        <section>
+          <h2>Storage and retention</h2>
+          <p>In hosted mode, account and workspace data is stored by this service and its hosting provider. In local mode, it remains on the computer running ApplyPilot. Data remains until it is removed or the service operator deletes the account or workspace.</p>
+        </section>
+        <section>
+          <h2>Your responsibility</h2>
+          <p>Resume parsing and job matching can be incomplete or incorrect. Review job requirements and every application before submission. Use automation only where permitted by the employer website, and do not submit false, misleading, or duplicate applications.</p>
+        </section>
+        <section>
+          <h2>No guarantee</h2>
+          <p>ApplyPilot does not guarantee job availability, matching accuracy, application delivery, interviews, or employment. The service may change, pause, or stop integrations when a career website changes.</p>
+        </section>
+      </div>
+
+      <form id="consentForm" class="consent-form">
+        <label class="consent-check">
+          <input id="consentData" type="checkbox" required>
+          <span>I agree to the Terms and consent to processing my resume and workspace data as described above.</span>
+        </label>
+        <label class="consent-check">
+          <input id="consentAutomation" type="checkbox" required>
+          <span>I understand that I must review matches and follow each career website's rules.</span>
+        </label>
+        <button class="primary consent-continue" type="submit">
+          Continue to ApplyPilot
+          <i data-lucide="arrow-right" size="17"></i>
+        </button>
+        <small>Terms version: 22 August 2026</small>
+      </form>
+    </main>
+  </div>
+
   <div id="auth-screen" style="display: none; position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(20px);">
     <div class="auth-card" style="background: var(--surface-solid); padding: 40px; border-radius: 20px; box-shadow: var(--shadow-lg); width: 400px; border: 1px solid var(--line-strong); display: flex; flex-direction: column; gap: 24px;">
       <div style="text-align: center;">
@@ -84,7 +141,7 @@
             </div>
             <div class="upload-copy">
               <strong id="resumeFileName">No resume loaded</strong>
-              <span id="resumeMeta">TXT parses best; PDF and Word get a rough local extraction.</span>
+              <span id="resumeMeta">PDF and TXT are fully parsed; Word extraction is limited.</span>
             </div>
             <label for="resumeInput" class="select-file-trigger">
               <i data-lucide="file-plus" size="14"></i>

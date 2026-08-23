@@ -1454,6 +1454,126 @@ body {
   mix-blend-mode: multiply;
 }
 
+.consent-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: rgba(233, 238, 246, 0.96);
+}
+
+.consent-screen[hidden] {
+  display: none;
+}
+
+.consent-card {
+  width: min(720px, 100%);
+  max-height: min(820px, calc(100dvh - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 30px;
+  border-radius: var(--radius-xl);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-raised-lg);
+}
+
+.consent-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.consent-brand span,
+.consent-brand strong {
+  display: block;
+}
+
+.consent-brand span {
+  margin-bottom: 2px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.consent-brand strong {
+  color: var(--text);
+  font-size: 25px;
+  line-height: 1.2;
+}
+
+.consent-intro {
+  margin: 0;
+  font-size: 14px;
+}
+
+.consent-terms {
+  min-height: 180px;
+  overflow-y: auto;
+  padding: 6px 18px 6px 6px;
+}
+
+.consent-terms section {
+  padding: 13px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.consent-terms section:last-child {
+  border-bottom: 0;
+}
+
+.consent-terms h2 {
+  margin-bottom: 5px;
+  font-size: 15px;
+}
+
+.consent-terms p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.consent-form {
+  display: grid;
+  gap: 12px;
+}
+
+.consent-check {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-inset-sm);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.consent-check input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
+.consent-continue {
+  width: 100%;
+  min-height: 48px;
+}
+
+.consent-form > small {
+  color: var(--text-muted);
+  text-align: center;
+}
+
 #auth-screen {
   background: rgba(233, 238, 246, 0.82) !important;
   backdrop-filter: blur(22px) saturate(1.08) !important;
@@ -1921,6 +2041,43 @@ dialog::backdrop {
 }
 
 @media (max-width: 700px) {
+  .consent-screen {
+    place-items: stretch;
+    padding: 0;
+  }
+
+  .consent-card {
+    width: 100%;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    gap: 14px;
+    padding: 20px 16px calc(18px + env(safe-area-inset-bottom));
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .consent-brand strong {
+    font-size: 22px;
+  }
+
+  .consent-intro {
+    font-size: 13px;
+  }
+
+  .consent-terms {
+    min-height: 0;
+    flex: 1;
+    padding-right: 8px;
+  }
+
+  .consent-terms section {
+    padding: 10px 2px;
+  }
+
+  .consent-check {
+    padding: 10px 12px;
+  }
+
   .titlebar {
     margin: 10px 10px 0;
     height: 58px;
@@ -2185,6 +2342,79 @@ dialog::backdrop {
 
   .target-form .primary {
     width: 100%;
+  }
+
+  .layout,
+  .layout.show-resume-panel,
+  .layout.show-mobile-resume {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 72px;
+  }
+
+  .layout.show-resume-panel .side-panel,
+  .layout.show-mobile-resume .side-panel {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    grid-column: 1;
+    grid-row: 1;
+    padding: 20px 16px 28px;
+    overflow-x: hidden;
+  }
+
+  .layout.show-resume-panel .main,
+  .layout.show-mobile-resume .main {
+    display: none;
+  }
+
+  .layout.show-resume-panel .rail,
+  .layout.show-mobile-resume .rail {
+    width: 100%;
+    min-width: 0;
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .resume-panel,
+  .resume-panel > *,
+  .resume-panel label,
+  .resume-panel input,
+  .resume-panel textarea,
+  .upload-box {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .resume-panel .section-head {
+    margin-bottom: 18px;
+  }
+
+  .resume-panel .section-head h2 {
+    font-size: 24px;
+    line-height: 1.2;
+  }
+
+  .upload-box {
+    padding: 22px 18px;
+  }
+
+  .upload-copy {
+    width: 100%;
+  }
+
+  .upload-copy strong,
+  .upload-copy span {
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  .select-file-trigger {
+    width: 100%;
+    white-space: normal;
   }
 }
 

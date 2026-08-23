@@ -141,24 +141,113 @@ const ROLE_HINTS = [
   "business analyst",
   "data analyst",
   "data scientist",
-  "machine learning",
+  "machine learning engineer",
   "marketing manager",
   "customer success",
   "sales engineer",
   "operations manager",
+  "operations coordinator",
+  "administrative assistant",
+  "customer service representative",
+  "sales representative",
+  "supply chain analyst",
+  "procurement specialist",
+  "mechanical engineer",
+  "mechanical designer",
+  "manufacturing engineer",
+  "quality engineer",
+  "electrical engineer",
+  "civil engineer",
   "graphic designer",
   "digital marketing specialist"
 ];
 
-const SKILLS = [
-  "accessibility", "agile", "analytics", "angular", "api", "aws", "azure", 
-  "c#", "c++", "ci/cd", "css", "data visualization", "design systems", 
-  "django", "docker", "express", "figma", "flask", "frontend", "git", 
-  "github", "go", "graphql", "html", "java", "javascript", "jira", 
-  "kubernetes", "machine learning", "node", "node.js", "python", "react", 
-  "research", "rest", "ruby", "scrum", "software engineering", "spring", 
-  "sql", "tailwind", "typescript", "ui", "user research", "ux", "vue", "webflow"
-];
+const SKILL_ALIASES = {
+  "Accessibility": ["accessibility", "wcag"],
+  "Agile": ["agile"],
+  "Analytics": ["analytics"],
+  "Angular": ["angular", "angular.js", "angularjs"],
+  "ANSYS": ["ansys"],
+  "API": ["api", "apis"],
+  "AutoCAD": ["autocad", "auto cad"],
+  "AWS": ["aws", "amazon web services"],
+  "Azure": ["azure", "microsoft azure"],
+  "C#": ["c#", "c sharp"],
+  "C++": ["c++"],
+  "CATIA": ["catia"],
+  "CI/CD": ["ci/cd", "continuous integration", "continuous delivery"],
+  "CNC": ["cnc", "computer numerical control"],
+  "Creo": ["creo", "pro/engineer"],
+  "CRM": ["crm", "customer relationship management"],
+  "CSS": ["css", "css3"],
+  "Data visualization": ["data visualization", "data visualisation"],
+  "Design systems": ["design system", "design systems"],
+  "Django": ["django"],
+  "Docker": ["docker"],
+  "Excel": ["excel", "microsoft excel", "ms excel"],
+  "Express": ["express", "express.js", "expressjs"],
+  "FEA": ["fea", "finite element analysis"],
+  "Figma": ["figma"],
+  "Flask": ["flask"],
+  "Fusion 360": ["fusion 360"],
+  "GD&T": ["gd&t", "geometric dimensioning and tolerancing"],
+  "Git": ["git"],
+  "GitHub": ["github"],
+  "Go": ["golang", "go language"],
+  "GraphQL": ["graphql"],
+  "HTML": ["html", "html5"],
+  "Inventory management": ["inventory management", "inventory control"],
+  "Java": ["java"],
+  "JavaScript": ["javascript", "ecmascript"],
+  "Jira": ["jira"],
+  "Kubernetes": ["kubernetes", "k8s"],
+  "Laravel": ["laravel"],
+  "Lean manufacturing": ["lean manufacturing", "lean principles"],
+  "Machine learning": ["machine learning"],
+  "MATLAB": ["matlab"],
+  "MongoDB": ["mongodb", "mongo db"],
+  "MySQL": ["mysql"],
+  "Node.js": ["node.js", "nodejs"],
+  "NX": ["siemens nx", "nx cad"],
+  "Operations": ["operations management", "business operations"],
+  "PHP": ["php"],
+  "PostgreSQL": ["postgresql", "postgres"],
+  "Power BI": ["power bi", "powerbi"],
+  "Procurement": ["procurement", "purchasing"],
+  "Project management": ["project management", "project planning"],
+  "Python": ["python"],
+  "Quality control": ["quality control", "quality management", "quality assurance"],
+  "React": ["react", "react.js", "reactjs"],
+  "Redis": ["redis"],
+  "Revit": ["revit"],
+  "REST": ["rest api", "restful"],
+  "Ruby": ["ruby"],
+  "Salesforce": ["salesforce"],
+  "SAP": ["sap"],
+  "Scrum": ["scrum"],
+  "Simulink": ["simulink"],
+  "Six Sigma": ["six sigma"],
+  "SolidWorks": ["solidworks", "solid works"],
+  "Spring": ["spring boot", "spring framework"],
+  "SQL": ["sql", "structured query language"],
+  "Supply chain": ["supply chain", "logistics"],
+  "Tableau": ["tableau"],
+  "Tailwind CSS": ["tailwind", "tailwind css"],
+  "Terraform": ["terraform"],
+  "TypeScript": ["typescript"],
+  "UI design": ["ui design", "user interface design"],
+  "User research": ["user research", "usability testing"],
+  "UX design": ["ux design", "user experience design"],
+  "Vue": ["vue", "vue.js", "vuejs"],
+  "Webflow": ["webflow"]
+};
+
+const RESUME_STOP_WORDS = new Set([
+  "about", "after", "also", "among", "and", "are", "been", "being", "can", "company",
+  "contact", "education", "email", "experience", "for", "from", "have", "into", "more",
+  "objective", "professional", "profile", "resume", "skills", "summary", "that", "the", "their",
+  "this", "through", "using", "with", "work", "worked", "year", "years", "your"
+]);
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -221,6 +310,7 @@ function defaultState() {
       maxQueue: 5,
       reviewBeforeSubmit: true
     },
+    consent: null,
     resume: null,
     sources: CANADA_DEFAULT_SOURCES.map(makeSource),
     jobs: [],
@@ -481,21 +571,33 @@ async function plainTextFromBuffer(file) {
   if (ext === ".pdf") {
     try {
       const pdfModule = require("pdf-parse");
-      const pdfParse = typeof pdfModule === "function" ? pdfModule : (pdfModule.PDFParse || pdfModule.default || pdfModule);
-      const data = await pdfParse(file.buffer);
+      let data;
+
+      if (typeof pdfModule.PDFParse === "function") {
+        const parser = new pdfModule.PDFParse({ data: file.buffer });
+        try {
+          data = await parser.getText();
+        } finally {
+          await parser.destroy?.();
+        }
+      } else {
+        const pdfParse = typeof pdfModule === "function" ? pdfModule : pdfModule.default;
+        if (typeof pdfParse !== "function") throw new Error("Unsupported pdf-parse API");
+        data = await pdfParse(file.buffer);
+      }
+
+      const extracted = normalizeResumeText(data?.text || "");
+      if (!isUsableResumeText(extracted)) throw new Error("PDF did not contain usable text");
       return {
-        text: data.text,
+        text: extracted,
         quality: "parsed"
       };
     } catch (err) {
       console.error("PDF parse error:", err);
-      const rough = file.buffer
-        .toString("latin1")
-        .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, " ")
-        .replace(/\s+/g, " ");
+      const rough = extractReadablePdfFragments(file.buffer);
       return {
         text: rough,
-        quality: "rough-pdf"
+        quality: isUsableResumeText(rough) ? "rough-pdf" : "unreadable-pdf"
       };
     }
   }
@@ -516,17 +618,83 @@ async function plainTextFromBuffer(file) {
   };
 }
 
+function normalizeResumeText(value) {
+  return String(value || "")
+    .replace(/[\uFB00-\uFB06]/g, character => ({
+      "ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl", "ﬅ": "st", "ﬆ": "st"
+    })[character] || character)
+    .replace(/[\u00AD\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ")
+    .replace(/([A-Za-z])-[ \t]*\r?\n[ \t]*([a-z])/g, "$1$2")
+    .replace(/[•●▪◦]/g, "\n")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function isUsableResumeText(text) {
+  const words = String(text || "").match(/[A-Za-z][A-Za-z+#.&/-]{1,}/g) || [];
+  return words.length >= 20 && words.join("").length >= 120;
+}
+
+function extractReadablePdfFragments(buffer) {
+  const raw = buffer.toString("latin1");
+  const fragments = [];
+  const stringPattern = /\(([^()\\]*(?:\\.[^()\\]*)*)\)/g;
+  let match;
+  while ((match = stringPattern.exec(raw)) && fragments.length < 3000) {
+    const value = match[1]
+      .replace(/\\([()\\])/g, "$1")
+      .replace(/\\[nrt]/g, " ")
+      .replace(/\\[0-7]{1,3}/g, " ");
+    if (/[A-Za-z]{2}/.test(value)) fragments.push(value);
+  }
+  return normalizeResumeText(fragments.join("\n"));
+}
+
+function phrasePattern(phrase) {
+  const escaped = String(phrase)
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\s+/g, "\\s+");
+  return new RegExp(`(^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`, "i");
+}
+
+function extractResumeSkills(text) {
+  const normalized = normalizeResumeText(text).toLowerCase();
+  return Object.entries(SKILL_ALIASES)
+    .filter(([, aliases]) => aliases.some(alias => phrasePattern(alias).test(normalized)))
+    .map(([skill]) => skill);
+}
+
+function extractResumeKeywords(text, skills, roles) {
+  const frequencies = new Map();
+  const tokens = normalizeResumeText(text).toLowerCase().match(/[a-z][a-z0-9+#.-]{2,}/g) || [];
+  for (const token of tokens) {
+    const clean = token.replace(/^[.-]+|[.-]+$/g, "");
+    if (clean.length < 3 || RESUME_STOP_WORDS.has(clean) || /^\d+$/.test(clean)) continue;
+    frequencies.set(clean, (frequencies.get(clean) || 0) + 1);
+  }
+  const ranked = [...frequencies.entries()]
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length || a[0].localeCompare(b[0]))
+    .map(([word]) => word);
+  return [...new Set([...roles, ...skills, ...ranked])].slice(0, 48);
+}
+
 function parseResume(text, file) {
-  const lower = text.toLowerCase();
+  const normalizedText = normalizeResumeText(text);
+  const lower = normalizedText.toLowerCase();
   const words = lower.match(/[a-z0-9+#.-]+/g) || [];
-  const uniqueWords = [...new Set(words)].slice(0, 500);
-  const email = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
-  const phone = text.match(/(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/)?.[0] || "";
-  const skills = SKILLS.filter(skill => lower.includes(skill.toLowerCase()));
-  const roles = inferResumeRoles(text, skills);
-  const years = text.match(/(\d+)\+?\s+years?/i)?.[1] || "";
-  const locations = extractLocations(text);
-  const keywords = [...new Set([...skills, ...roles, ...uniqueWords.filter(word => word.length > 5).slice(0, 24)])].slice(0, 40);
+  const email = normalizedText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
+  const phone = normalizedText.match(/(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/)?.[0] || "";
+  const skills = extractResumeSkills(normalizedText);
+  const roles = inferResumeRoles(normalizedText, skills);
+  const years = normalizedText.match(/(\d+)\+?\s+years?/i)?.[1] || "";
+  const locations = extractLocations(normalizedText);
+  const keywords = extractResumeKeywords(normalizedText, skills, roles);
 
   return {
     id: id("resume"),
@@ -542,7 +710,7 @@ function parseResume(text, file) {
     locations,
     keywords,
     wordCount: words.length,
-    preview: text.replace(/\s+/g, " ").trim().slice(0, 700)
+    preview: normalizedText.replace(/\s+/g, " ").trim().slice(0, 700)
   };
 }
 
@@ -558,12 +726,10 @@ function inferResumeRoles(text, skills = []) {
   };
 
   for (const role of ROLE_HINTS) {
-    if (lower.includes(role)) add(role, firstPage.includes(role) ? 80 : 55);
+    if (lower.includes(role)) add(role, firstPage.includes(role) ? 45 : 35);
   }
 
-  for (const role of extractExperienceTitles(text)) {
-    add(role, 70);
-  }
+  extractExperienceTitles(text).forEach((role, index) => add(role, index === 0 ? 100 : 65));
 
   const phraseRules = [
     [/front[\s-]?end.{0,24}(developer|engineer)|\breact developer\b|\bui developer\b/i, "Frontend Engineer", 45],
@@ -573,31 +739,49 @@ function inferResumeRoles(text, skills = []) {
     [/\bproduct designer\b|\bux\/ui\s+designer\b|\bui\/ux\s+designer\b|\buser experience designer\b/i, "Product Designer", 45],
     [/\bux designer\b|\buser experience designer\b|\bux researcher\b/i, "UX Designer", 40],
     [/\bdata analyst\b|\bbusiness intelligence\b|\bpower bi\b|\btableau\b/i, "Data Analyst", 45],
-    [/\bdata scientist\b|\bmachine learning\b|\bml engineer\b/i, "Data Scientist", 45],
+    [/\bdata scientist\b|\b(machine learning|ml) engineer\b/i, "Data Scientist", 45],
     [/\bquality assurance\b|\bqa\b|\btest automation\b/i, "QA Engineer", 40],
     [/\bdevops\b|\bcloud engineer\b|\bkubernetes\b|\bci\/cd\b/i, "DevOps Engineer", 40],
     [/\bproduct manager\b|\bproduct owner\b/i, "Product Manager", 45],
     [/\bbusiness analyst\b|\brequirements analyst\b/i, "Business Analyst", 40],
-    [/\bmarketing\b|\bseo\b|\bcampaigns?\b/i, "Digital Marketing Specialist", 35]
+    [/\b(digital )?marketing (manager|specialist|coordinator)\b|\bseo specialist\b/i, "Digital Marketing Specialist", 40],
+    [/\bmechanical (engineer|designer)\b|\bmachine design\b/i, "Mechanical Engineer", 45],
+    [/\bmanufacturing (engineer|specialist)\b|\bproduction engineer\b/i, "Manufacturing Engineer", 45],
+    [/\bquality (engineer|specialist)\b|\bquality control\b/i, "Quality Engineer", 42],
+    [/\belectrical engineer\b|\belectronics engineer\b/i, "Electrical Engineer", 45],
+    [/\bcivil engineer\b|\bstructural engineer\b/i, "Civil Engineer", 45],
+    [/\bsupply chain (analyst|coordinator)\b|\blogistics coordinator\b/i, "Supply Chain Analyst", 42],
+    [/\boperations (coordinator|specialist)\b/i, "Operations Coordinator", 42],
+    [/\badministrative assistant\b|\boffice administrator\b/i, "Administrative Assistant", 42],
+    [/\bcustomer service (representative|associate)\b/i, "Customer Service Representative", 42],
+    [/\bsales (representative|associate|executive)\b/i, "Sales Representative", 42]
   ];
 
   for (const [pattern, role, points] of phraseRules) {
     if (pattern.test(text)) add(role, points);
   }
 
-  const hasAny = (...items) => items.some(item => skillSet.has(item) || lower.includes(item));
-  if (hasAny("react", "javascript", "typescript", "html", "css", "vue", "angular")) add("Frontend Engineer", 30);
-  if (hasAny("node", "node.js", "express", "api", "rest", "graphql", "java", "spring", "django", "flask")) add("Backend Engineer", 28);
-  if (hasAny("javascript", "python", "java", "git", "github", "sql")) add("Software Developer", 22);
-  if (hasAny("figma", "design systems", "user research") && /\b(product|ux|ui|visual|graphic)\s+design(er)?\b/i.test(text)) add("UX Designer", 28);
-  if (hasAny("analytics", "sql", "data visualization")) add("Data Analyst", 24);
-  if (hasAny("aws", "azure", "docker", "kubernetes", "ci/cd")) add("DevOps Engineer", 24);
+  const hasSkill = (...items) => items.some(item => skillSet.has(item.toLowerCase()));
+  const countSkills = (...items) => items.filter(item => skillSet.has(item.toLowerCase())).length;
+  if (countSkills("react", "javascript", "typescript", "html", "css", "vue", "angular") >= 3) add("Frontend Engineer", 30);
+  if (countSkills("node.js", "express", "api", "rest", "graphql", "java", "spring", "django", "flask") >= 3) add("Backend Engineer", 28);
+  if (countSkills("javascript", "python", "java", "git", "github", "sql", "c#", "c++") >= 3) add("Software Developer", 22);
+  if (hasSkill("figma", "design systems", "user research", "ux design", "ui design") && /\b(product|ux|ui|visual|graphic)\s+design(er)?\b/i.test(text)) add("UX Designer", 28);
+  if (countSkills("analytics", "sql", "data visualization", "power bi", "tableau", "excel") >= 3) add("Data Analyst", 24);
+  if (countSkills("aws", "azure", "docker", "kubernetes", "ci/cd", "terraform") >= 3) add("DevOps Engineer", 24);
+  if (countSkills("autocad", "solidworks", "catia", "creo", "nx", "fusion 360", "gd&t", "fea") >= 2) add("Mechanical Designer", 28);
+  if (countSkills("lean manufacturing", "six sigma", "quality control", "cnc", "sap") >= 2) add("Manufacturing Engineer", 25);
+  if (countSkills("supply chain", "procurement", "inventory management", "sap", "excel") >= 3) add("Supply Chain Analyst", 24);
 
-  return [...scores.entries()]
-    .filter(([, score]) => score >= 22)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  const ranked = [...scores.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const strongestScore = ranked[0]?.[1] || 0;
+  const minimumRoleScore = strongestScore >= 70 ? Math.max(40, strongestScore - 45) : 24;
+
+  return ranked
+    .filter(([, score]) => score >= minimumRoleScore)
     .map(([role]) => role)
-    .slice(0, 6);
+    .slice(0, 4);
 }
 
 function extractExperienceTitles(text) {
@@ -631,7 +815,17 @@ function extractExperienceTitles(text) {
     [/\bproject\s+manager\b/i, "Project Manager"],
     [/\bbusiness\s+analyst\b/i, "Business Analyst"],
     [/\bmarketing\s+(manager|specialist|coordinator)\b/i, "Digital Marketing Specialist"],
-    [/\bgraphic\s+designer\b/i, "Graphic Designer"]
+    [/\bgraphic\s+designer\b/i, "Graphic Designer"],
+    [/\bmechanical\s+(engineer|designer)\b/i, "Mechanical Engineer"],
+    [/\bmanufacturing\s+(engineer|specialist)\b|\bproduction\s+engineer\b/i, "Manufacturing Engineer"],
+    [/\bquality\s+(engineer|specialist|analyst)\b/i, "Quality Engineer"],
+    [/\belectrical\s+engineer\b|\belectronics\s+engineer\b/i, "Electrical Engineer"],
+    [/\bcivil\s+engineer\b|\bstructural\s+engineer\b/i, "Civil Engineer"],
+    [/\bsupply\s+chain\s+(analyst|coordinator)\b|\blogistics\s+coordinator\b/i, "Supply Chain Analyst"],
+    [/\boperations\s+(manager|coordinator|specialist)\b/i, "Operations Coordinator"],
+    [/\badministrative\s+assistant\b|\boffice\s+administrator\b/i, "Administrative Assistant"],
+    [/\bcustomer\s+service\s+(representative|associate)\b/i, "Customer Service Representative"],
+    [/\bsales\s+(representative|associate|executive)\b/i, "Sales Representative"]
   ];
 
   for (const line of lines) {
@@ -1808,6 +2002,7 @@ function importantTerms(value) {
 
 function publicState(state) {
   return {
+    consent: state.consent || null,
     preferences: state.preferences,
     resume: state.resume,
     sources: state.sources,
@@ -1828,6 +2023,23 @@ async function handleApi(req, res, pathname) {
   try {
     if (req.method === "GET" && pathname === "/api/state") {
       return sendJson(res, 200, publicState(readState()));
+    }
+
+    if (req.method === "POST" && pathname === "/api/consent") {
+      const body = await readJson(req);
+      if (!body.version || body.dataProcessing !== true || body.automationResponsibility !== true) {
+        return sendJson(res, 400, { error: "Complete both consent confirmations to continue." });
+      }
+      const state = readState();
+      state.consent = {
+        version: String(body.version).slice(0, 40),
+        acceptedAt: new Date().toISOString(),
+        dataProcessing: true,
+        automationResponsibility: true
+      };
+      addActivity(state, `Terms and data processing consent accepted (${state.consent.version}).`);
+      writeState(state);
+      return sendJson(res, 200, publicState(state));
     }
 
     if (req.method === "PATCH" && pathname === "/api/preferences") {

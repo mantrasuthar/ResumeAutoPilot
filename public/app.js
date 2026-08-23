@@ -9,6 +9,9 @@ const state = {
   lastAutoMatchCount: null
 };
 
+const CONSENT_VERSION = "2026-08-22";
+const CONSENT_STORAGE_KEY = "applypilot-consent";
+
 const els = {
   serverStatus: document.querySelector("#serverStatus"),
   resumeForm: document.querySelector("#resumeForm"),
@@ -89,8 +92,10 @@ async function api(path, options = {}) {
 }
 
 async function initAuth() {
+  if (readLocalConsent()) document.querySelector("#consent-screen").hidden = true;
   try {
     await api("/api/auth/me");
+    document.querySelector("#consent-screen").hidden = true;
     document.querySelector("#auth-screen").style.display = "none";
     document.querySelector(".app-shell").style.display = "grid";
     await loadState();
@@ -104,6 +109,17 @@ async function initAuth() {
 async function loadState() {
   try {
     state.data = await api("/api/state");
+    const localConsent = readLocalConsent();
+    if (localConsent && state.data.consent?.version !== CONSENT_VERSION) {
+      state.data = await api("/api/consent", {
+        method: "POST",
+        body: JSON.stringify({
+          version: CONSENT_VERSION,
+          dataProcessing: true,
+          automationResponsibility: true
+        })
+      });
+    }
     els.serverStatus.textContent = state.data.capabilities?.hostedMode ? "Hosted website" : "Running locally";
     if (state.data.resume) els.jobFilter.value = "matched";
     render();
@@ -111,6 +127,34 @@ async function loadState() {
     els.serverStatus.textContent = "Server unavailable";
     showToast(error.message);
   }
+}
+
+function readLocalConsent() {
+  try {
+    const consent = JSON.parse(localStorage.getItem(CONSENT_STORAGE_KEY) || "null");
+    return consent?.version === CONSENT_VERSION ? consent : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberLocalConsent() {
+  const consent = { version: CONSENT_VERSION, acceptedAt: new Date().toISOString() };
+  localStorage.setItem(CONSENT_STORAGE_KEY, JSON.stringify(consent));
+  return consent;
+}
+
+async function startApp() {
+  const consentScreen = document.querySelector("#consent-screen");
+  if (!readLocalConsent()) {
+    consentScreen.hidden = false;
+    document.querySelector("#auth-screen").style.display = "none";
+    document.querySelector(".app-shell").style.display = "none";
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+  consentScreen.hidden = true;
+  await initAuth();
 }
 
 function render() {
@@ -201,7 +245,7 @@ function renderResume() {
   if (!resume) {
     els.resumeFileName.textContent = "No resume loaded";
     els.resumeSubtitle.textContent = "Upload a resume to build a matching profile.";
-    els.resumeMeta.textContent = "TXT parses best; PDF and Word get a rough local extraction.";
+    els.resumeMeta.textContent = "PDF and TXT are fully parsed; Word extraction is limited.";
     els.removeResumeBtn.style.display = "none";
     els.uploadResumeBtn.innerHTML = '<i data-lucide="upload-cloud" size="16"></i> Upload';
     return;
@@ -969,13 +1013,26 @@ document.querySelector("#logoutBtn").addEventListener("click", async () => {
   }
 });
 
-initAuth();
+document.querySelector("#consentForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!document.querySelector("#consentData").checked || !document.querySelector("#consentAutomation").checked) return;
+  rememberLocalConsent();
+  document.querySelector("#particle-canvas").hidden = false;
+  initParticles();
+  await initAuth();
+});
+
+startApp();
 if (window.lucide) lucide.createIcons();
 
 // --- Mouse Attraction Canvas Particle Engine ---
 function initParticles() {
   const canvas = document.getElementById('particle-canvas');
   if (!canvas) return;
+  if (!readLocalConsent()) {
+    canvas.hidden = true;
+    return;
+  }
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const compactDevice = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
   const saveData = Boolean(navigator.connection?.saveData);
