@@ -709,7 +709,7 @@ function parseResume(text, file) {
   const years = normalizedText.match(/(\d+)\+?\s+years?/i)?.[1] || "";
   const locations = extractLocations(normalizedText);
   const keywords = extractResumeKeywords(normalizedText, skills, roles);
-  const details = extractResumeDetails(normalizedText, roles);
+  const details = extractResumeDetails(normalizedText, roles, locations);
   const name = extractCandidateName(normalizedText);
 
   return {
@@ -751,7 +751,7 @@ function extractCandidateName(text) {
   };
 }
 
-function extractResumeDetails(text, roles = []) {
+function extractResumeDetails(text, roles = [], locations = []) {
   const lines = String(text || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   const urls = String(text || "").match(/https?:\/\/[^\s<>]+/gi) || [];
   const linkedin = urls.find(url => /linkedin\.com/i.test(url)) || "";
@@ -764,6 +764,11 @@ function extractResumeDetails(text, roles = []) {
     .map(value => ({ value: value === "USA" ? "United States" : value, index: header.toLowerCase().indexOf(value.toLowerCase()) }))
     .filter(item => item.index >= 0)
     .sort((a, b) => a.index - b.index)[0]?.value || "";
+  const broadLocations = new Set(["remote", "remote india", "remote canada", "india", "canada", "united states", "usa"]);
+  const provinceNames = ["Saskatchewan", "Ontario", "British Columbia", "Alberta", "Manitoba", "Quebec"];
+  const province = provinceNames.find(value => new RegExp(`\\b${value}\\b`, "i").test(header)) || "";
+  const city = locations.find(value => !broadLocations.has(String(value).toLowerCase()) && !provinceNames.includes(value)) || "";
+  const location = [...new Set([city, province, country].filter(Boolean))].join(", ");
   const degreeLine = lines.find(line => /\b(bachelor|master|doctor|ph\.?d|diploma|associate|b\.?tech|m\.?tech|b\.?sc|m\.?sc|mba)\b/i.test(line)) || "";
   const schoolLine = lines.find(line => /\b(university|college|polytechnic|institute of technology|school of)\b/i.test(line) && line.length <= 140) || "";
   const experienceIndex = lines.findIndex(line => /^(professional |work |employment )?experience$/i.test(line));
@@ -777,6 +782,9 @@ function extractResumeDetails(text, roles = []) {
     portfolio,
     postalCode,
     country,
+    city,
+    province,
+    location,
     degree: degreeLine.split(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}\b/i)[0].trim().slice(0, 140),
     school: schoolLine.slice(0, 140),
     currentTitle: roles[0] || "",
@@ -1701,7 +1709,12 @@ function buildAutofillPayload(state, item) {
     city: answers.city || "",
     province: answers.province || "",
     postalCode: answers.postalCode || resume.details?.postalCode || "",
-    location: [answers.city, answers.province].filter(Boolean).join(", ") || state.preferences.locations?.[0] || item.location || "",
+    location: [answers.city, answers.province].filter(Boolean).join(", ")
+      || resume.details?.location
+      || resume.locations?.find(value => !/^remote$/i.test(value))
+      || state.preferences.locations?.[0]
+      || item.location
+      || "",
     country: answers.country || resume.details?.country || "",
     authorization: answers.authorization || "",
     sponsorship: answers.sponsorship || "",
@@ -2022,52 +2035,121 @@ function buildApplyClickScript() {
 
 function buildAutofillScript(payload) {
   const data = JSON.stringify(payload).replace(/</g, "\\u003c");
-  return `(() => {
+  return `(async () => {
     const payload = ${data};
-    const filled = [];
-    const skipped = [];
-    const warnings = [];
+    const filledByField = new Map();
+    const skippedByField = new Map();
+    const warningSet = new Set();
 
     const visible = el => !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
     const textOf = value => String(value || "").replace(/\\s+/g, " ").trim();
+    const normalized = value => textOf(value).toLowerCase();
+    const rememberFilled = (descriptor, value) => {
+      const field = textOf(descriptor).slice(0, 100) || "unlabelled field";
+      filledByField.set(field, { field, value: textOf(value).slice(0, 80) });
+      skippedByField.delete(field);
+    };
+    const rememberSkipped = (descriptor, reason) => {
+      const field = textOf(descriptor).slice(0, 100) || "unlabelled field";
+      if (!filledByField.has(field)) skippedByField.set(field, { field, reason });
+    };
+    const allRoots = () => {
+      const roots = [document];
+      for (let index = 0; index < roots.length; index++) {
+        const root = roots[index];
+        root.querySelectorAll("*").forEach(el => {
+          if (el.shadowRoot && !roots.includes(el.shadowRoot)) roots.push(el.shadowRoot);
+        });
+      }
+      return roots;
+    };
+    const deepFields = () => allRoots().flatMap(root => [
+      ...root.querySelectorAll('input, textarea, select, [contenteditable="true"], [role="textbox"]')
+    ]);
+    const nodeText = node => textOf(node && (node.innerText || node.textContent));
     const labelsFor = el => {
-      const parts = [
+      const directParts = [
         el.getAttribute("aria-label"),
-        el.getAttribute("placeholder"),
         el.getAttribute("name"),
         el.id,
-        el.autocomplete
+        el.autocomplete,
+        el.getAttribute("title"),
+        el.getAttribute("data-testid"),
+        el.getAttribute("data-test-id"),
+        el.getAttribute("data-qa"),
+        el.getAttribute("data-field"),
+        el.getAttribute("data-field-name")
       ];
+      const nearbyParts = [];
+      const placeholder = el.getAttribute("placeholder");
+      const root = el.getRootNode && el.getRootNode();
+      const labelledBy = textOf(el.getAttribute("aria-labelledby")).split(/\\s+/).filter(Boolean);
+      labelledBy.forEach(id => {
+        const label = root && root.querySelector ? root.querySelector("#" + CSS.escape(id)) : null;
+        if (label) nearbyParts.push(nodeText(label));
+      });
       if (el.id) {
-        document.querySelectorAll("label").forEach(label => {
-          if (label.getAttribute("for") === el.id) parts.push(label.innerText || label.textContent);
+        const labelRoot = root && root.querySelectorAll ? root : document;
+        labelRoot.querySelectorAll("label").forEach(label => {
+          if (label.getAttribute("for") === el.id) nearbyParts.push(label.innerText || label.textContent);
         });
       }
       const wrappingLabel = el.closest("label");
-      if (wrappingLabel) parts.push(wrappingLabel.innerText || wrappingLabel.textContent);
-      let container = el.parentElement;
-      for (let i = 0; i < 3 && container; i++) {
-        const text = (container.innerText || container.textContent || "").trim();
-        if (text && text.length < 200) parts.push(text);
-        container = container.parentElement;
+      if (wrappingLabel) nearbyParts.push(wrappingLabel.innerText || wrappingLabel.textContent);
+      const fieldContainer = el.closest('[data-field], [data-field-name], [class*="field" i], [class*="question" i], [role="group"]');
+      if (fieldContainer) {
+        const nearbyLabel = fieldContainer.querySelector("label, legend, [class*=label i], [class*=title i]");
+        if (nearbyLabel) nearbyParts.push(nodeText(nearbyLabel));
       }
-      return textOf(parts.filter(Boolean).join(" ")).toLowerCase();
+      let sibling = el.previousElementSibling;
+      for (let i = 0; i < 2 && sibling; i++, sibling = sibling.previousElementSibling) {
+        const text = nodeText(sibling);
+        if (text && text.length < 120) nearbyParts.push(text);
+      }
+      const strongParts = [...directParts, ...nearbyParts].filter(Boolean).map(textOf);
+      if (strongParts.length) {
+        if (placeholder && !/^(type|enter|select|choose|search)\\b/i.test(placeholder)) strongParts.push(placeholder);
+        return normalized([...new Set(strongParts)].join(" "));
+      }
+      let container = el.parentElement;
+      for (let i = 0; i < 3 && container; i++, container = container.parentElement) {
+        const text = nodeText(container);
+        if (text && text.length < 160) return normalized(text);
+      }
+      return normalized(placeholder);
     };
     const setValue = (el, value) => {
       if (!value) return false;
-      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
-      if (descriptor?.set) descriptor.set.call(el, value);
-      else el.value = value;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
+      const existing = textOf(el.value || (el.isContentEditable ? el.textContent : ""));
+      if (existing && !el.dataset.applypilotFilled) return false;
+      el.focus();
+      if (el.isContentEditable || (!('value' in el) && el.getAttribute("role") === "textbox")) {
+        el.textContent = value;
+      } else {
+        const prototype = el instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : el instanceof HTMLSelectElement
+            ? HTMLSelectElement.prototype
+            : HTMLInputElement.prototype;
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+        const previous = el.value;
+        if (descriptor && descriptor.set) descriptor.set.call(el, value);
+        else el.value = value;
+        if (el._valueTracker) el._valueTracker.setValue(previous);
+      }
+      const inputEvent = typeof InputEvent === "function"
+        ? new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })
+        : new Event("input", { bubbles: true });
+      el.dispatchEvent(inputEvent);
       el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.dataset.applypilotFilled = "true";
       el.style.outline = "3px solid #00e5ff";
       el.style.outlineOffset = "1px";
       return true;
     };
     const matchValue = (descriptor, type) => {
       if (/e-?mail|email/.test(descriptor)) return payload.email;
-      if (/phone|mobile|telephone/.test(descriptor)) return payload.phone;
+      if (/phone|mobile|telephone|contact\\s*number/.test(descriptor)) return payload.phone;
       if (/first\\s*name|given\\s*name/.test(descriptor)) return payload.firstName;
       if (/last\\s*name|family\\s*name|surname/.test(descriptor)) return payload.lastName;
       if (/full\\s*name|your\\s*name|name/.test(descriptor) && !/company|employer|school/.test(descriptor)) return payload.fullName;
@@ -2085,14 +2167,17 @@ function buildAutofillScript(payload) {
       if (/country/.test(descriptor)) return payload.country;
       if (/work.*authori|authori.*work|legally.*work/.test(descriptor)) return payload.authorization;
       if (/sponsor|visa/.test(descriptor)) return payload.sponsorship;
-      if (/current.*company|current.*employer|most recent.*employer/.test(descriptor)) return payload.currentCompany;
-      if (/current.*(title|position)|most recent.*(title|position)/.test(descriptor)) return payload.currentTitle;
+      if (/current.*company|current.*employer|most recent.*employer|organization|organisation/.test(descriptor)) return payload.currentCompany;
+      if (/current.*(title|position|role)|most recent.*(title|position|role)|job\\s*title/.test(descriptor)) return payload.currentTitle;
       if (/school|university|college|institution/.test(descriptor) && !/email/.test(descriptor)) return payload.school;
       if (/degree|qualification|field of study/.test(descriptor)) return payload.degree;
       if (/years?.*(experience)|experience.*years?/.test(descriptor)) return payload.yearsExperience;
       if (/skills?|technologies|expertise/.test(descriptor)) return payload.skills;
       if (type === "email") return payload.email;
       if (type === "tel") return payload.phone;
+      if (/autocomplete.*organization/.test(descriptor)) return payload.currentCompany;
+      if (/autocomplete.*address-level2/.test(descriptor)) return payload.city || payload.location;
+      if (/autocomplete.*country/.test(descriptor)) return payload.country;
       return "";
     };
     const chooseSelect = (el, descriptor) => {
@@ -2110,17 +2195,21 @@ function buildAutofillScript(payload) {
         return normalizedWants.some(want => optionText.includes(want) || want.includes(optionText));
       });
       if (!option) return false;
-      el.value = option.value;
+      const descriptorSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+      if (descriptorSetter && descriptorSetter.set) descriptorSetter.set.call(el, option.value);
+      else el.value = option.value;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.dataset.applypilotFilled = "true";
       el.style.outline = "3px solid #00e5ff";
-      filled.push({ field: descriptor.slice(0, 80), value: textOf(option.textContent) });
+      rememberFilled(descriptor, textOf(option.textContent));
       return true;
     };
     const chooseBoolean = (el, descriptor) => {
       const value = textOf(el.value || el.getAttribute("aria-label") || "").toLowerCase();
       const surrounding = descriptor + " " + value;
       if (/gender|ethnic|race|veteran|disability|aboriginal|indigenous|sexual orientation|pronoun/.test(descriptor)) {
-        warnings.push("Optional demographic question left for manual review.");
+        warningSet.add("Optional demographic questions were left for manual review.");
         return false;
       }
       if (/sponsor|visa/.test(surrounding) && /(^|\\b)(no|not require|do not)(\\b|$)/.test(surrounding)) {
@@ -2134,36 +2223,49 @@ function buildAutofillScript(payload) {
       return false;
     };
 
-    const fields = [...document.querySelectorAll("input, textarea, select")].filter(el => visible(el) && !el.disabled);
-    for (const el of fields) {
-      const type = (el.type || el.tagName || "").toLowerCase();
-      const descriptor = labelsFor(el);
-      if (!descriptor) continue;
-      if (type === "file") {
-        warnings.push("Resume/file upload field detected; left for manual review.");
-        continue;
+    let scanned = 0;
+    let passes = 0;
+    for (let pass = 0; pass < 5; pass++) {
+      passes++;
+      const fields = [...new Set(deepFields())].filter(el => visible(el) && !el.disabled);
+      scanned = Math.max(scanned, fields.length);
+      for (const el of fields) {
+        const type = (el.type || el.tagName || el.getAttribute("role") || "").toLowerCase();
+        const descriptor = labelsFor(el);
+        if (!descriptor) continue;
+        if (type === "file") {
+          warningSet.add("Resume and other file uploads require manual review.");
+          continue;
+        }
+        if (el.tagName === "SELECT") {
+          if (!el.dataset.applypilotFilled && !chooseSelect(el, descriptor)) rememberSkipped(descriptor, "no matching select option");
+          continue;
+        }
+        if (["checkbox", "radio"].includes(type)) {
+          if (!el.checked && chooseBoolean(el, descriptor)) rememberFilled(descriptor, "selected");
+          continue;
+        }
+        if (["hidden", "submit", "button", "reset"].includes(type) || el.readOnly) continue;
+        const value = matchValue(descriptor, type);
+        if (!value) {
+          rememberSkipped(descriptor, "no verified profile value");
+          continue;
+        }
+        if (setValue(el, value)) rememberFilled(descriptor, value);
       }
-      if (el.tagName === "SELECT") {
-        if (!chooseSelect(el, descriptor)) skipped.push({ field: descriptor.slice(0, 80), reason: "no matching select option" });
-        continue;
-      }
-      if (["checkbox", "radio"].includes(type)) {
-        if (chooseBoolean(el, descriptor)) filled.push({ field: descriptor.slice(0, 80), value: "selected" });
-        continue;
-      }
-      if (["hidden", "submit", "button", "reset"].includes(type) || el.readOnly) continue;
-      const value = matchValue(descriptor, type);
-      if (setValue(el, value)) filled.push({ field: descriptor.slice(0, 80), value: value.length > 60 ? value.slice(0, 57) + "..." : value });
-      else skipped.push({ field: descriptor.slice(0, 80), reason: "no safe value" });
+      if (pass < 4) await new Promise(resolve => setTimeout(resolve, 700));
     }
 
-    let banner = document.querySelector("#applypilot-autofill-banner");
+    let banner = [...allRoots()].map(root => root.querySelector("#applypilot-autofill-banner")).find(Boolean);
     if (!banner) {
       banner = document.createElement("div");
       banner.id = "applypilot-autofill-banner";
       document.documentElement.appendChild(banner);
     }
-    banner.textContent = "ApplyPilot filled " + filled.length + " field(s). Review everything. File uploads, CAPTCHA, custom questions, and final submit are manual.";
+    const filled = [...filledByField.values()];
+    const skipped = [...skippedByField.values()];
+    const warnings = [...warningSet];
+    banner.textContent = "ApplyPilot filled " + filled.length + " field(s). Review everything. File uploads, CAPTCHA, custom questions, and final submit remain manual.";
     Object.assign(banner.style, {
       position: "fixed",
       zIndex: "2147483647",
@@ -2179,7 +2281,7 @@ function buildAutofillScript(payload) {
       borderRadius: "12px",
       boxShadow: "0 8px 32px rgba(0,0,0,0.8), 0 0 16px rgba(0, 229, 255, 0.1)"
     });
-    return { filled, skipped: skipped.slice(0, 12), warnings };
+    return { filled, skipped: skipped.slice(0, 20), warnings, scanned, passes };
   })()`;
 }
 
@@ -2328,6 +2430,8 @@ async function handleApi(req, res, pathname) {
         phone: parsed.phone,
         postalCode: parsed.details?.postalCode,
         country: parsed.details?.country,
+        city: parsed.details?.city,
+        province: parsed.details?.province,
         portfolio: parsed.details?.portfolio,
         linkedin: parsed.details?.linkedin,
         github: parsed.details?.github,
@@ -2339,7 +2443,7 @@ async function handleApi(req, res, pathname) {
       };
       state.answerBank = { ...state.answerBank };
       for (const [key, value] of Object.entries(inferredAnswers)) {
-        if (value && !state.answerBank[key]) state.answerBank[key] = value;
+        if (value) state.answerBank[key] = value;
       }
       if (parsed.roles?.length) {
         state.preferences.roles = mergeResumeRoles(parsed.roles, state.preferences.roles);

@@ -433,7 +433,7 @@ function renderQueue() {
     const autofillTitle = canAutofill
       ? "Open and autofill in local Edge or Chrome"
       : "Open the official page and copy prepared answers";
-    const autofillLabel = canAutofill ? "Open + autofill" : "Open + answers";
+    const autofillLabel = canAutofill ? "Open + autofill" : "Open + copy answers";
     return `
     <article class="queue-card">
       <div class="queue-top">
